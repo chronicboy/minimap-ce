@@ -13,16 +13,24 @@ public class MapConfig {
 	public boolean showEntities = true;
 	public int zoomLevel = 0; // 0=normal, positive=zoomed in, negative=zoomed out
 	public boolean circular = true;
-	public boolean showChunkGrid = true;
+	public boolean showChunkGrid = false;
 	public boolean showCompass = true;
 	public boolean showCoordinates = true;
+	public boolean showBiome = true;
 	public boolean showWaypoints = true;
 	public boolean showSpawnWaypoint = true;
+	public int fullscreenZoom = 0;
+	public float minimapOpacity = 0.9f;
+	public boolean showTeleportButton = true;
+	public boolean fullscreenMapPausesGame = true;
+	public String teleportCommand = "/tp {x} {y} {z}";
 
-	public static KeyBinding toggleCoordinatesKey = new KeyBinding("Toggle Coordinates", Keyboard.KEY_F);
+	public static KeyBinding toggleEntitiesKey = new KeyBinding("Toggle Entities", Keyboard.KEY_F);
 	public static KeyBinding increaseSizeKey = new KeyBinding("Minimap: Increase Size", Keyboard.KEY_RBRACKET);
 	public static KeyBinding decreaseSizeKey = new KeyBinding("Minimap: Decrease Size", Keyboard.KEY_LBRACKET);
 	public static KeyBinding waypointGuiKey = new KeyBinding("Waypoints", Keyboard.KEY_B);
+	public static KeyBinding fullscreenMapKey = new KeyBinding("Fullscreen Map", Keyboard.KEY_J);
+	public static KeyBinding settingsKey = new KeyBinding("Map Settings", Keyboard.KEY_O);
 
 	public static MapConfig instance = new MapConfig();
 
@@ -66,7 +74,7 @@ public class MapConfig {
 			}
 			if (props.containsKey("zoomLevel")) {
 				zoomLevel = Integer.parseInt(props.getProperty("zoomLevel"));
-				zoomLevel = Math.max(-4, Math.min(4, zoomLevel));
+				zoomLevel = Math.max(-1, Math.min(1, zoomLevel));
 			}
 			if (props.containsKey("circular")) {
 				circular = Boolean.parseBoolean(props.getProperty("circular"));
@@ -80,11 +88,34 @@ public class MapConfig {
 			if (props.containsKey("showCoordinates")) {
 				showCoordinates = Boolean.parseBoolean(props.getProperty("showCoordinates"));
 			}
+			if (props.containsKey("showBiome")) {
+				showBiome = Boolean.parseBoolean(props.getProperty("showBiome"));
+			}
 			if (props.containsKey("showWaypoints")) {
 				showWaypoints = Boolean.parseBoolean(props.getProperty("showWaypoints"));
 			}
 			if (props.containsKey("showSpawnWaypoint")) {
 				showSpawnWaypoint = Boolean.parseBoolean(props.getProperty("showSpawnWaypoint"));
+			}
+			if (props.containsKey("fullscreenZoom")) {
+				fullscreenZoom = Integer.parseInt(props.getProperty("fullscreenZoom"));
+				fullscreenZoom = Math.max(-4, Math.min(4, fullscreenZoom));
+			}
+			if (props.containsKey("minimapOpacity")) {
+				minimapOpacity = Float.parseFloat(props.getProperty("minimapOpacity"));
+				minimapOpacity = Math.max(0.1f, Math.min(1.0f, minimapOpacity));
+			}
+			if (props.containsKey("showTeleportButton")) {
+				showTeleportButton = Boolean.parseBoolean(props.getProperty("showTeleportButton"));
+			}
+			if (props.containsKey("fullscreenMapPausesGame")) {
+				fullscreenMapPausesGame = Boolean.parseBoolean(props.getProperty("fullscreenMapPausesGame"));
+			}
+			if (props.containsKey("teleportCommand")) {
+				teleportCommand = props.getProperty("teleportCommand");
+				if (teleportCommand != null && teleportCommand.startsWith("\"") && teleportCommand.endsWith("\"")) {
+					teleportCommand = teleportCommand.substring(1, teleportCommand.length() - 1);
+				}
 			}
 			System.out.println("[Minimap CE] Config loaded successfully from: " + CONFIG_FILE);
 		} catch (IOException | NumberFormatException e) {
@@ -119,8 +150,19 @@ public class MapConfig {
 		props.setProperty("showChunkGrid", String.valueOf(showChunkGrid));
 		props.setProperty("showCompass", String.valueOf(showCompass));
 		props.setProperty("showCoordinates", String.valueOf(showCoordinates));
+		props.setProperty("showBiome", String.valueOf(showBiome));
 		props.setProperty("showWaypoints", String.valueOf(showWaypoints));
 		props.setProperty("showSpawnWaypoint", String.valueOf(showSpawnWaypoint));
+		props.setProperty("fullscreenZoom", String.valueOf(fullscreenZoom));
+		props.setProperty("minimapOpacity", String.valueOf(minimapOpacity));
+		props.setProperty("showTeleportButton", String.valueOf(showTeleportButton));
+		props.setProperty("fullscreenMapPausesGame", String.valueOf(fullscreenMapPausesGame));
+
+		String savedCommand = teleportCommand;
+		if (savedCommand != null && !savedCommand.startsWith("\"")) {
+			savedCommand = "\"" + savedCommand + "\"";
+		}
+		props.setProperty("teleportCommand", savedCommand);
 
 		try (FileOutputStream fos = new FileOutputStream(configFile)) {
 			props.store(fos, "Minimap CE Configuration");

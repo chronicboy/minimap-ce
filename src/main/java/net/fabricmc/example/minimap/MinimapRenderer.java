@@ -13,6 +13,8 @@ public class MinimapRenderer {
 	private int cachedPlayerZ = Integer.MIN_VALUE;
 	private int cachedZoomLevel = -999;
 	private int cachedMapSize = -1;
+	private long lastSaveTime = 0;
+	private final java.util.HashSet<Long> tempChunkSet = new java.util.HashSet<Long>();
 
 	public void renderMinimap(World world, EntityPlayer player, int screenWidth, int screenHeight, float partialTicks) {
 		if (world == null || player == null || !MapConfig.instance.minimapEnabled) {
@@ -54,6 +56,9 @@ public class MinimapRenderer {
 		// Layout Adjustment: If top-aligned, push map down to make room for time
 		if (MapConfig.instance.minimapPosition <= 1) {
 			mapY += 20;
+		} else {
+			// If bottom-aligned, push map up to make room for coords/biome below
+			mapY -= 30;
 		}
 
 		GL11.glPushMatrix();
@@ -62,7 +67,7 @@ public class MinimapRenderer {
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
 		// Background (JourneyMap style: Solid dark circle border for map content)
-		GL11.glColor4f(0.1f, 0.1f, 0.1f, 0.9f);
+		GL11.glColor4f(0.1f, 0.1f, 0.1f, MapConfig.instance.minimapOpacity);
 		drawCircle(mapX + mapRadius, mapY + mapRadius, mapRadius);
 
 		double zoomFactor = Math.pow(2.0, -MapConfig.instance.zoomLevel);
@@ -71,6 +76,10 @@ public class MinimapRenderer {
 
 		int playerBlockX = (int) Math.floor(player.posX);
 		int playerBlockZ = (int) Math.floor(player.posZ);
+
+		// Sub-pixel offset for smooth scrolling (fractional part of player position)
+		double fracX = player.posX - playerBlockX;
+		double fracZ = player.posZ - playerBlockZ;
 
 		// Check if cache needs refresh
 		boolean cacheValid = (colorCache != null && heightCache != null
@@ -101,8 +110,9 @@ public class MinimapRenderer {
 						continue;
 					}
 
-					int worldX = (int) (player.posX + (x - mapRadius) / zoomFactor);
-					int worldZ = (int) (player.posZ + (z - mapRadius) / zoomFactor);
+					// Use integer-aligned center for stable sampling
+					int worldX = playerBlockX + (int) Math.floor((x - mapRadius) / zoomFactor);
+					int worldZ = playerBlockZ + (int) Math.floor((z - mapRadius) / zoomFactor);
 
 					// Get color and height
 					long packed = getSurfaceInfo(world, worldX, worldZ, player);
@@ -144,15 +154,29 @@ public class MinimapRenderer {
 			cachedPlayerZ = playerBlockZ;
 			cachedZoomLevel = MapConfig.instance.zoomLevel;
 			cachedMapSize = mapSize;
+
+			// Save explored terrain to persistent tile cache (throttled to every 500ms to
+			// prevent map holes)
+			long now = System.currentTimeMillis();
+			if (MapTileManager.instance.hasWorld() && pixelStep == 1 && now - lastSaveTime > 500) {
+				lastSaveTime = now;
+				saveExploredChunks(world, player, mapSize, mapRadius, zoomFactor);
+			}
 		}
+
+		// Apply sub-pixel offset for smooth scrolling
+		double offsetX = -fracX * zoomFactor;
+		double offsetZ = -fracZ * zoomFactor;
 
 		// Render from cache
 		Tessellator t = Tessellator.instance;
 		t.startDrawingQuads();
 
 		for (int z = 0; z < mapSize; z += pixelStep) {
+			int zOffset = z * mapSize;
+			double basePz = mapY + z + offsetZ;
 			for (int x = 0; x < mapSize; x += pixelStep) {
-				int color = colorCache[z * mapSize + x];
+				int color = colorCache[zOffset + x];
 				if (color == -1)
 					continue;
 
@@ -160,12 +184,12 @@ public class MinimapRenderer {
 				int g = (color >> 8) & 0xFF;
 				int b = color & 0xFF;
 
-				int size = pixelStep;
+				double px = mapX + x + offsetX;
 				t.setColorRGBA(r, g, b, 255);
-				t.addVertex(mapX + x, mapY + z + size, 0.0);
-				t.addVertex(mapX + x + size, mapY + z + size, 0.0);
-				t.addVertex(mapX + x + size, mapY + z, 0.0);
-				t.addVertex(mapX + x, mapY + z, 0.0);
+				t.addVertex(px, basePz + pixelStep, 0.0);
+				t.addVertex(px + pixelStep, basePz + pixelStep, 0.0);
+				t.addVertex(px + pixelStep, basePz, 0.0);
+				t.addVertex(px, basePz, 0.0);
 			}
 		}
 		t.draw();
@@ -199,7 +223,9 @@ public class MinimapRenderer {
 			renderGrid(mapX, mapY, mapSize, mapRadius, zoomFactor);
 		}
 
-		renderSpawnOnMap(world, player, mapX, mapY, mapSize, mapRadius, zoomFactor);
+		if (MapConfig.instance.showSpawnWaypoint) {
+			renderSpawnOnMap(world, player, mapX, mapY, mapSize, mapRadius, zoomFactor);
+		}
 
 		// Render waypoints on map
 		if (MapConfig.instance.showWaypoints) {
@@ -223,7 +249,7 @@ public class MinimapRenderer {
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 
 		// Draw time and coordinate info (JourneyMap Style: Floating Boxes)
-		renderInfoOverlay(world, player, mapX, mapY, mapSize, mapRadius);
+		renderInfoOverlay(world, player, mapX, mapY, mapSize, mapRadius, screenWidth, screenHeight);
 
 		GL11.glDisable(GL11.GL_BLEND);
 		GL11.glEnable(GL11.GL_DEPTH_TEST);
@@ -250,8 +276,62 @@ public class MinimapRenderer {
 		return (r << 16) | (g << 8) | b;
 	}
 
+	private void saveExploredChunks(World world, EntityPlayer player, int mapSize, int mapRadius, double zoomFactor) {
+		// Reuse field-level set to avoid per-call allocation
+		tempChunkSet.clear();
+
+		// Calculate world bounds based on map radius and zoom
+		// Add 1 chunk padding so we catch chunks right at the edge of the load distance
+		int worldRadius = (int) Math.ceil(mapRadius / zoomFactor);
+		int minChunkX = (((int) player.posX - worldRadius) >> 4) - 1;
+		int maxChunkX = (((int) player.posX + worldRadius) >> 4) + 1;
+		int minChunkZ = (((int) player.posZ - worldRadius) >> 4) - 1;
+		int maxChunkZ = (((int) player.posZ + worldRadius) >> 4) + 1;
+
+		for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+			for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+				long chunkKey = MapTileManager.packChunkCoords(chunkX, chunkZ);
+				if (tempChunkSet.contains(chunkKey))
+					continue;
+
+				// Check if this chunk is loaded
+				if (!world.getChunkProvider().chunkExists(chunkX, chunkZ))
+					continue;
+
+				// Check if we should skip saving this chunk
+				int[] existing = MapTileManager.instance.getChunkColors(chunkX, chunkZ);
+				if (existing != null) {
+					boolean hasEmpty = false;
+					for (int i = 0; i < 256; i++) {
+						if (existing[i] == 0) {
+							hasEmpty = true;
+							break;
+						}
+					}
+					// If the chunk is fully cached and has no holes, skip re-evaluating it
+					if (!hasEmpty)
+						continue;
+				}
+
+				tempChunkSet.add(chunkKey);
+
+				// Sample the full 16x16 chunk
+				int[] colors = new int[256];
+				for (int lz = 0; lz < 16; lz++) {
+					for (int lx = 0; lx < 16; lx++) {
+						int bx = chunkX * 16 + lx;
+						int bz = chunkZ * 16 + lz;
+						long packed = getSurfaceInfo(world, bx, bz, player);
+						colors[lz * 16 + lx] = (int) (packed >> 32);
+					}
+				}
+				MapTileManager.instance.saveChunkColors(chunkX, chunkZ, colors);
+			}
+		}
+	}
+
 	// Returns packed [Color (high 32) | Height (low 32)]
-	private long getSurfaceInfo(World world, int x, int z, EntityPlayer player) {
+	public static long getSurfaceInfo(World world, int x, int z, EntityPlayer player) {
 		int h = 64;
 		int dim = world.provider.dimensionId;
 
@@ -364,25 +444,33 @@ public class MinimapRenderer {
 
 			GL11.glDisable(GL11.GL_TEXTURE_2D);
 			if (withinMap) {
-				drawSpawnDiamond(px, pz, 4, wp.getRed(), wp.getGreen(), wp.getBlue());
+				drawWaypointMarker(px, pz, 4, wp.getRed(), wp.getGreen(), wp.getBlue());
 			} else {
 				// Edge rendering
 				double angle = Math.atan2(dz, dx);
 				int edgeX = centerX + (int) (Math.cos(angle) * (mapRadius - 5));
 				int edgeY = centerY + (int) (Math.sin(angle) * (mapRadius - 5));
-				drawSpawnDiamond(edgeX, edgeY, 4, wp.getRed(), wp.getGreen(), wp.getBlue());
+				drawWaypointMarker(edgeX, edgeY, 4, wp.getRed(), wp.getGreen(), wp.getBlue());
 			}
 			GL11.glEnable(GL11.GL_TEXTURE_2D);
 		}
 	}
 
-	private void renderInfoOverlay(World world, EntityPlayer player, int mapX, int mapY, int mapSize, int mapRadius) {
+	private void renderInfoOverlay(World world, EntityPlayer player, int mapX, int mapY, int mapSize, int mapRadius,
+			int screenWidth, int screenHeight) {
 		if (world == null || player == null)
 			return;
 
 		FontRenderer fr = Minecraft.getMinecraft().fontRenderer;
 		if (fr == null)
 			return;
+
+		// Calculate text scale based on minimap size (baseline 128 = 1.0f)
+		float textScale = Math.max(0.5f, Math.min(1.0f, mapSize / 128.0f));
+		float invScale = 1.0f / textScale;
+
+		GL11.glPushMatrix();
+		GL11.glScalef(textScale, textScale, 1.0f);
 
 		// 1. Time Overlay
 		long time = world.getWorldTime();
@@ -396,59 +484,76 @@ public class MinimapRenderer {
 		String clockStr = timeStr + " " + period;
 
 		int centerX = mapX + mapRadius;
-		int clockW = fr.getStringWidth(clockStr) + 8;
-		int clockH = 12;
 
-		// Position: Fixed above map
-		int clockY = mapY - 20;
+		int clockW = (int) (fr.getStringWidth(clockStr) * textScale) + 8;
+		int clockH = (int) (12 * textScale);
 
-		drawFloatingBox(centerX - clockW / 2, clockY, clockW, clockH);
-		fr.drawStringWithShadow(clockStr, centerX - clockW / 2 + 4, clockY + 2, 0xFFFFFF);
+		// Position: Fixed above map (clamp to screen)
+		int clockY = Math.max(2, mapY - clockH - 8);
+		int clockX = centerX - clockW / 2;
+		clockX = Math.max(2, Math.min(clockX, screenWidth - clockW - 2));
+
+		fr.drawStringWithShadow(clockStr, (int) ((clockX + 4) * invScale), (int) ((clockY + 2 * textScale) * invScale),
+				0xFFFFFF);
 
 		int x = (int) player.posX;
 		int y = (int) player.posY;
 		int z = (int) player.posZ;
-		int dim = world.provider.dimensionId;
-		String coordStr = String.format("x: %d, z: %d, y: %d (%d)", x, z, y, dim);
+		String coordStr = String.format("x: %d, z: %d, y: %d", x, z, y);
 		BiomeGenBase biome = world.getBiomeGenForCoords(x, z);
 		String biomeName = biome != null ? biome.biomeName : "Unknown";
 
-		int coordW = fr.getStringWidth(coordStr) + 8;
-		int biomeW = fr.getStringWidth(biomeName) + 8;
+		int coordW = (int) (fr.getStringWidth(coordStr) * textScale) + 8;
+		int biomeW = (int) (fr.getStringWidth(biomeName) * textScale) + 8;
 		int maxInfoW = Math.max(coordW, biomeW);
 
-		int infoY = mapY + mapSize + 8;
-		int infoH = (MapConfig.instance.showCoordinates ? 24 : 12);
-
-		drawFloatingBox(centerX - maxInfoW / 2, infoY, maxInfoW, infoH);
-
-		if (MapConfig.instance.showCoordinates) {
-			fr.drawStringWithShadow(coordStr, centerX - fr.getStringWidth(coordStr) / 2, infoY + 2, 0xFFFFFF);
-			fr.drawStringWithShadow(biomeName, centerX - fr.getStringWidth(biomeName) / 2, infoY + 12, 0xAAAAAA);
-		} else {
-			fr.drawStringWithShadow(biomeName, centerX - fr.getStringWidth(biomeName) / 2, infoY + 2, 0xFFFFFF);
+		boolean showCoords = MapConfig.instance.showCoordinates;
+		boolean showBiome = MapConfig.instance.showBiome;
+		int infoLines = (showCoords ? 1 : 0) + (showBiome ? 1 : 0);
+		int infoH = (int) (infoLines * 12 * textScale);
+		if (infoH == 0) {
+			GL11.glPopMatrix();
+			return; // Nothing to show
 		}
-	}
 
-	private void drawFloatingBox(int x, int y, int w, int h) {
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
-		Tessellator t = Tessellator.instance;
-		t.startDrawingQuads();
-		t.addVertex(x, y + h, 0.0);
-		t.addVertex(x + w, y + h, 0.0);
-		t.addVertex(x + w, y, 0.0);
-		t.addVertex(x, y, 0.0);
-		t.draw();
-		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		// Place below map, clamp to screen bounds
+		int infoY = mapY + mapSize + 8;
+		infoY = Math.min(infoY, screenHeight - infoH - 2);
+		int infoX = centerX - maxInfoW / 2;
+		infoX = Math.max(2, Math.min(infoX, screenWidth - maxInfoW - 2));
+
+		int textY = infoY + (int) (2 * textScale);
+		if (showCoords) {
+			int coordTxtW = (int) (fr.getStringWidth(coordStr) * textScale);
+			fr.drawStringWithShadow(coordStr, (int) ((infoX + (maxInfoW - coordTxtW) / 2) * invScale),
+					(int) (textY * invScale), 0xFFFFFF);
+			textY += (int) (12 * textScale);
+		}
+		if (showBiome) {
+			int biomeTxtW = (int) (fr.getStringWidth(biomeName) * textScale);
+			fr.drawStringWithShadow(biomeName, (int) ((infoX + (maxInfoW - biomeTxtW) / 2) * invScale),
+					(int) (textY * invScale), 0xAAAAAA);
+		}
+
+		GL11.glPopMatrix();
 	}
 
 	private void renderSpawnOnMap(World world, EntityPlayer player, int mapX, int mapY, int mapSize, int mapRadius,
 			double zoomFactor) {
-		if (world == null || world.getWorldInfo() == null)
+		if (!SpawnTracker.instance.hasSpawn())
 			return;
-		int spawnX = world.getWorldInfo().getSpawnX();
-		int spawnZ = world.getWorldInfo().getSpawnZ();
+		int spawnX, spawnZ;
+		int dim = world.provider.dimensionId;
+		if (dim == 1) {
+			spawnX = 100;
+			spawnZ = 0;
+		} else if (dim == -1) {
+			spawnX = SpawnTracker.instance.getNetherSpawnX();
+			spawnZ = SpawnTracker.instance.getNetherSpawnZ();
+		} else {
+			spawnX = SpawnTracker.instance.getSpawnX();
+			spawnZ = SpawnTracker.instance.getSpawnZ();
+		}
 		double dx = (spawnX - player.posX) * zoomFactor;
 		double dz = (spawnZ - player.posZ) * zoomFactor;
 		double dist = Math.sqrt(dx * dx + dz * dz);
@@ -460,13 +565,13 @@ public class MinimapRenderer {
 
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		if (withinMap) {
-			drawSpawnDiamond(px, pz, 5, 0, 102, 204);
+			drawWaypointMarker(px, pz, 4, 0, 102, 204);
 		} else {
 			// Always show spawn at map edge when outside
 			double angle = Math.atan2(dz, dx);
 			int edgeX = centerX + (int) (Math.cos(angle) * (mapRadius - 5));
 			int edgeY = centerY + (int) (Math.sin(angle) * (mapRadius - 5));
-			drawSpawnDiamond(edgeX, edgeY, 4, 0, 102, 204);
+			drawWaypointMarker(edgeX, edgeY, 4, 0, 102, 204);
 		}
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 	}
@@ -575,47 +680,65 @@ public class MinimapRenderer {
 		GL11.glDisable(GL11.GL_CULL_FACE);
 
 		double angle = Math.toRadians(yaw + 90);
-		double sz = 6.0;
+		double sz = 7.0;
 
-		// Clean chevron shape
+		// Sleek pointed arrow shape — slim profile
 		double tipX = centerX + Math.cos(angle) * sz;
 		double tipY = centerY + Math.sin(angle) * sz;
-		double wingLX = centerX + Math.cos(angle + Math.PI * 0.7) * (sz * 0.65);
-		double wingLY = centerY + Math.sin(angle + Math.PI * 0.7) * (sz * 0.65);
-		double wingRX = centerX + Math.cos(angle - Math.PI * 0.7) * (sz * 0.65);
-		double wingRY = centerY + Math.sin(angle - Math.PI * 0.7) * (sz * 0.65);
-		double notchX = centerX + Math.cos(angle + Math.PI) * (sz * 0.15);
-		double notchY = centerY + Math.sin(angle + Math.PI) * (sz * 0.15);
+		double wingLX = centerX + Math.cos(angle + Math.PI * 0.82) * (sz * 0.6);
+		double wingLY = centerY + Math.sin(angle + Math.PI * 0.82) * (sz * 0.6);
+		double wingRX = centerX + Math.cos(angle - Math.PI * 0.82) * (sz * 0.6);
+		double wingRY = centerY + Math.sin(angle - Math.PI * 0.82) * (sz * 0.6);
+		double tailX = centerX + Math.cos(angle + Math.PI) * (sz * 0.2);
+		double tailY = centerY + Math.sin(angle + Math.PI) * (sz * 0.2);
 
 		Tessellator t = Tessellator.instance;
 
-		// 1. Black outline
-		GL11.glLineWidth(2.5f);
+		// 1. Drop shadow (offset slightly down-right)
+		t.startDrawing(GL11.GL_TRIANGLE_FAN);
+		t.setColorRGBA(0, 0, 0, 100);
+		t.addVertex(tipX + 1, tipY + 1, 0.0);
+		t.addVertex(wingLX + 1, wingLY + 1, 0.0);
+		t.addVertex(tailX + 1, tailY + 1, 0.0);
+		t.addVertex(wingRX + 1, wingRY + 1, 0.0);
+		t.draw();
+
+		// 2. Black outline
+		GL11.glLineWidth(2.0f);
 		t.startDrawing(GL11.GL_LINE_LOOP);
 		t.setColorOpaque_F(0.0f, 0.0f, 0.0f);
 		t.addVertex(tipX, tipY, 0.0);
 		t.addVertex(wingLX, wingLY, 0.0);
-		t.addVertex(notchX, notchY, 0.0);
+		t.addVertex(tailX, tailY, 0.0);
 		t.addVertex(wingRX, wingRY, 0.0);
 		t.draw();
 
-		// 2. White fill
+		// 3. Main body fill — dark navy blue
 		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorOpaque_F(1.0f, 1.0f, 1.0f);
+		t.setColorOpaque_F(0.10f, 0.15f, 0.30f);
 		t.addVertex(tipX, tipY, 0.0);
 		t.addVertex(wingLX, wingLY, 0.0);
-		t.addVertex(notchX, notchY, 0.0);
+		t.addVertex(tailX, tailY, 0.0);
 		t.addVertex(wingRX, wingRY, 0.0);
 		t.draw();
 
-		// 3. Small cyan center dot
-		double dotR = 1.5;
+		// 4. Bright cyan inner highlight (slightly smaller)
+		double hs = 0.6;
+		double hTipX = centerX + Math.cos(angle) * (sz * hs);
+		double hTipY = centerY + Math.sin(angle) * (sz * hs);
+		double hWingLX = centerX + Math.cos(angle + Math.PI * 0.82) * (sz * 0.38);
+		double hWingLY = centerY + Math.sin(angle + Math.PI * 0.82) * (sz * 0.38);
+		double hWingRX = centerX + Math.cos(angle - Math.PI * 0.82) * (sz * 0.38);
+		double hWingRY = centerY + Math.sin(angle - Math.PI * 0.82) * (sz * 0.38);
+		double hTailX = centerX + Math.cos(angle + Math.PI) * (sz * 0.08);
+		double hTailY = centerY + Math.sin(angle + Math.PI) * (sz * 0.08);
+
 		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorOpaque_F(0.0f, 0.85f, 1.0f);
-		for (int i = 0; i <= 6; i++) {
-			double a = i / 6.0 * Math.PI * 2.0;
-			t.addVertex(centerX + Math.cos(a) * dotR, centerY + Math.sin(a) * dotR, 0);
-		}
+		t.setColorOpaque_F(0.2f, 0.75f, 1.0f);
+		t.addVertex(hTipX, hTipY, 0.0);
+		t.addVertex(hWingLX, hWingLY, 0.0);
+		t.addVertex(hTailX, hTailY, 0.0);
+		t.addVertex(hWingRX, hWingRY, 0.0);
 		t.draw();
 
 		GL11.glLineWidth(1.0f);
@@ -643,29 +766,48 @@ public class MinimapRenderer {
 		t.draw();
 	}
 
-	private void drawSpawnDiamond(int centerX, int centerY, int size, int r, int g, int b) {
+	private void drawWaypointMarker(int centerX, int centerY, int size, int r, int g, int b) {
 		Tessellator t = Tessellator.instance;
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		GL11.glDisable(GL11.GL_CULL_FACE);
 		float rf = r / 255.0f;
 		float gf = g / 255.0f;
 		float bf = b / 255.0f;
-		GL11.glColor4f(rf, gf, bf, 1.0f);
 
+		// Half size minimalist marker
+		int s = Math.max(1, size / 2);
+		int outline = s + 1;
+
+		// 1. Black outline (1px thick square border)
 		t.startDrawing(GL11.GL_QUADS);
-		t.addVertex(centerX, centerY - size, 0.0);
-		t.addVertex(centerX - size, centerY, 0.0);
-		t.addVertex(centerX, centerY + size, 0.0);
-		t.addVertex(centerX + size, centerY, 0.0);
+		t.setColorOpaque_F(0f, 0f, 0f);
+		t.addVertex(centerX - outline, centerY - outline, 0.0);
+		t.addVertex(centerX + outline, centerY - outline, 0.0);
+		t.addVertex(centerX + outline, centerY + outline, 0.0);
+		t.addVertex(centerX - outline, centerY + outline, 0.0);
 		t.draw();
 
-		GL11.glColor4f(0f, 0f, 0f, 1f);
-		GL11.glLineWidth(1.0f);
-		t.startDrawing(GL11.GL_LINE_LOOP);
-		t.addVertex(centerX, centerY - size, 0.0);
-		t.addVertex(centerX - size, centerY, 0.0);
-		t.addVertex(centerX, centerY + size, 0.0);
-		t.addVertex(centerX + size, centerY, 0.0);
+		// 2. Colored inner square
+		t.startDrawing(GL11.GL_QUADS);
+		t.setColorOpaque_F(rf, gf, bf);
+		t.addVertex(centerX - s, centerY - s, 0.0);
+		t.addVertex(centerX + s, centerY - s, 0.0);
+		t.addVertex(centerX + s, centerY + s, 0.0);
+		t.addVertex(centerX - s, centerY + s, 0.0);
 		t.draw();
+
+		// 3. Bright contrast dot in center for visibility
+		if (s > 1) {
+			t.startDrawing(GL11.GL_QUADS);
+			t.setColorOpaque_F(1f, 1f, 1f); // White dot
+			t.addVertex(centerX - 1, centerY - 1, 0.0);
+			t.addVertex(centerX + 1, centerY - 1, 0.0);
+			t.addVertex(centerX + 1, centerY + 1, 0.0);
+			t.addVertex(centerX - 1, centerY + 1, 0.0);
+			t.draw();
+		}
+
+		GL11.glEnable(GL11.GL_CULL_FACE);
 	}
 
 	private void drawCompassLabels(int centerX, int centerY, int radius) {

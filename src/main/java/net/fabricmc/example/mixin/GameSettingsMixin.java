@@ -19,12 +19,14 @@ public abstract class GameSettingsMixin {
 	@Inject(method = "<init>(Lnet/minecraft/src/Minecraft;Ljava/io/File;)V", at = @At(value = "TAIL"))
 	private void addMinimapKeybind(Minecraft par1Minecraft, File par2File, CallbackInfo ci) {
 		// Add to keyBindings array
-		KeyBinding[] newKeyBindings = new KeyBinding[keyBindings.length + 4];
+		KeyBinding[] newKeyBindings = new KeyBinding[keyBindings.length + 6];
 		System.arraycopy(keyBindings, 0, newKeyBindings, 0, keyBindings.length);
-		newKeyBindings[keyBindings.length] = net.fabricmc.example.minimap.MapConfig.toggleCoordinatesKey;
+		newKeyBindings[keyBindings.length] = net.fabricmc.example.minimap.MapConfig.toggleEntitiesKey;
 		newKeyBindings[keyBindings.length + 1] = net.fabricmc.example.minimap.MapConfig.increaseSizeKey;
 		newKeyBindings[keyBindings.length + 2] = net.fabricmc.example.minimap.MapConfig.decreaseSizeKey;
 		newKeyBindings[keyBindings.length + 3] = net.fabricmc.example.minimap.MapConfig.waypointGuiKey;
+		newKeyBindings[keyBindings.length + 4] = net.fabricmc.example.minimap.MapConfig.fullscreenMapKey;
+		newKeyBindings[keyBindings.length + 5] = net.fabricmc.example.minimap.MapConfig.settingsKey;
 		keyBindings = newKeyBindings;
 
 		// Reset key binding array

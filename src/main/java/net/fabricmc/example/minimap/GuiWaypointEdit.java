@@ -12,6 +12,8 @@ public class GuiWaypointEdit extends GuiScreen {
     private final GuiScreen parent;
     private final Waypoint waypoint;
     private final boolean isNew;
+    private final int saveDim;
+    private final java.util.List<Waypoint> saveList;
     private GuiTextField nameField;
     private GuiTextField xField;
     private GuiTextField yField;
@@ -30,13 +32,20 @@ public class GuiWaypointEdit extends GuiScreen {
     };
 
     public GuiWaypointEdit(GuiScreen parent, Waypoint waypoint) {
-        this(parent, waypoint, false);
+        this(parent, waypoint, false, Integer.MIN_VALUE, null);
     }
 
     public GuiWaypointEdit(GuiScreen parent, Waypoint waypoint, boolean isNew) {
+        this(parent, waypoint, isNew, Integer.MIN_VALUE, null);
+    }
+
+    public GuiWaypointEdit(GuiScreen parent, Waypoint waypoint, boolean isNew, int saveDim,
+            java.util.List<Waypoint> saveList) {
         this.parent = parent;
         this.waypoint = waypoint;
         this.isNew = isNew;
+        this.saveDim = saveDim;
+        this.saveList = saveList;
     }
 
     @SuppressWarnings("unchecked")
@@ -101,7 +110,11 @@ public class GuiWaypointEdit extends GuiScreen {
         } else if (button.id == 1) {
             // Cancel — remove waypoint if it was just newly added
             if (isNew) {
-                WaypointManager.instance.removeWaypoint(waypoint);
+                if (saveList != null) {
+                    saveList.remove(waypoint);
+                } else {
+                    WaypointManager.instance.removeWaypoint(waypoint);
+                }
             }
             this.mc.displayGuiScreen(parent);
         }
@@ -128,7 +141,11 @@ public class GuiWaypointEdit extends GuiScreen {
         } catch (NumberFormatException ignored) {
         }
 
-        WaypointManager.instance.save();
+        if (saveList != null) {
+            WaypointManager.instance.saveWaypointsForDim(saveDim, saveList);
+        } else {
+            WaypointManager.instance.save();
+        }
     }
 
     @Override

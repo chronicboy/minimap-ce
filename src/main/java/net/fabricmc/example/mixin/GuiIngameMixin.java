@@ -21,6 +21,11 @@ public class GuiIngameMixin {
 			return;
 		}
 
+		// Hide minimap when F3 debug overlay is open
+		if (mc.gameSettings.debugScreenState != 0) {
+			return;
+		}
+
 		ScaledResolution sr = new ScaledResolution(mc.gameSettings, mc.displayWidth, mc.displayHeight);
 		try {
 			if (mc.theWorld.getWorldInfo() != null && mc.theWorld.provider != null) {

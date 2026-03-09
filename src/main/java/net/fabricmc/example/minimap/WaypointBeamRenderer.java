@@ -51,11 +51,22 @@ public class WaypointBeamRenderer {
     }
 
     private static void renderPass(Minecraft mc, double camX, double camY, double camZ, boolean minimal) {
-        if (MapConfig.instance.showSpawnWaypoint && mc.theWorld.provider.dimensionId == 0
-                && mc.theWorld.getWorldInfo() != null) {
-            int sx = mc.theWorld.getWorldInfo().getSpawnX();
-            int sy = mc.theWorld.getWorldInfo().getSpawnY();
-            int sz = mc.theWorld.getWorldInfo().getSpawnZ();
+        if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
+            int dim = mc.theWorld.provider.dimensionId;
+            int sx, sy, sz;
+            if (dim == 1) {
+                sx = 100;
+                sy = 49;
+                sz = 0;
+            } else if (dim == -1) {
+                sx = SpawnTracker.instance.getNetherSpawnX();
+                sz = SpawnTracker.instance.getNetherSpawnZ();
+                sy = SpawnTracker.instance.getSpawnY();
+            } else {
+                sx = SpawnTracker.instance.getSpawnX();
+                sz = SpawnTracker.instance.getSpawnZ();
+                sy = SpawnTracker.instance.getSpawnY();
+            }
             renderWaypoint(mc, "Spawn", sx, sy, sz, 0x5599FF, camX, camY, camZ, minimal);
         }
 
@@ -63,7 +74,6 @@ public class WaypointBeamRenderer {
         for (Waypoint wp : waypoints) {
             if (!wp.enabled)
                 continue;
-            // No distance limit — waypoints visible from any distance
             renderWaypoint(mc, wp.name, wp.x, wp.y, wp.z, wp.color, camX, camY, camZ, minimal);
         }
     }

@@ -1,7 +1,11 @@
 package net.fabricmc.example.mixin;
 
+import net.fabricmc.example.minimap.GuiFullscreenMap;
+import net.fabricmc.example.minimap.GuiMapSettings;
 import net.fabricmc.example.minimap.GuiWaypoints;
 import net.fabricmc.example.minimap.MapConfig;
+import net.fabricmc.example.minimap.MapTileManager;
+import net.fabricmc.example.minimap.SpawnTracker;
 import net.fabricmc.example.minimap.WaypointManager;
 import net.minecraft.src.*;
 import org.lwjgl.input.Keyboard;
@@ -18,6 +22,8 @@ public class MinecraftMixin {
 	private static boolean wasDecreaseSizePressed = false;
 	private static boolean wasCoordinatesKeyPressed = false;
 	private static boolean wasWaypointKeyPressed = false;
+	private static boolean wasFullscreenMapKeyPressed = false;
+	private static boolean wasSettingsKeyPressed = false;
 	private static String lastWorldId = "";
 	private static boolean wasDead = false;
 
@@ -31,7 +37,12 @@ public class MinecraftMixin {
 			if (!currentWorldId.equals(lastWorldId)) {
 				lastWorldId = currentWorldId;
 				WaypointManager.instance.loadForWorld(mc.theWorld);
+				MapTileManager.instance.loadForWorld(mc.theWorld);
+				SpawnTracker.instance.onWorldLoad(mc);
 			}
+
+			// Auto-save map tiles periodically
+			MapTileManager.instance.tickAutoSave();
 
 			if (mc.currentScreen instanceof GuiGameOver && !wasDead) {
 				wasDead = true;
@@ -76,7 +87,7 @@ public class MinecraftMixin {
 					if (!wasPlusPressed) {
 						wasPlusPressed = true;
 						MapConfig.instance.zoomLevel = Math.max(
-								MapConfig.instance.zoomLevel - 1, -4);
+								MapConfig.instance.zoomLevel - 1, -1);
 						MapConfig.instance.saveConfig();
 					}
 				} else {
@@ -87,7 +98,7 @@ public class MinecraftMixin {
 					if (!wasMinusPressed) {
 						wasMinusPressed = true;
 						MapConfig.instance.zoomLevel = Math.min(
-								MapConfig.instance.zoomLevel + 1, 4);
+								MapConfig.instance.zoomLevel + 1, 1);
 						MapConfig.instance.saveConfig();
 					}
 				} else {
@@ -117,11 +128,11 @@ public class MinecraftMixin {
 					wasDecreaseSizePressed = false;
 				}
 
-				// Toggle coordinates
-				if (MapConfig.toggleCoordinatesKey.isPressed()) {
+				// Toggle entities (F key)
+				if (MapConfig.toggleEntitiesKey.isPressed()) {
 					if (!wasCoordinatesKeyPressed) {
 						wasCoordinatesKeyPressed = true;
-						MapConfig.instance.showCoordinates = !MapConfig.instance.showCoordinates;
+						MapConfig.instance.showEntities = !MapConfig.instance.showEntities;
 						MapConfig.instance.saveConfig();
 					}
 				} else {
@@ -137,11 +148,33 @@ public class MinecraftMixin {
 				} else {
 					wasWaypointKeyPressed = false;
 				}
+
+				// Fullscreen Map (J key)
+				if (MapConfig.fullscreenMapKey.isPressed()) {
+					if (!wasFullscreenMapKeyPressed) {
+						wasFullscreenMapKeyPressed = true;
+						mc.displayGuiScreen(new GuiFullscreenMap());
+					}
+				} else {
+					wasFullscreenMapKeyPressed = false;
+				}
+
+				// Map Settings (O key)
+				if (MapConfig.settingsKey.isPressed()) {
+					if (!wasSettingsKeyPressed) {
+						wasSettingsKeyPressed = true;
+						mc.displayGuiScreen(new GuiMapSettings(null));
+					}
+				} else {
+					wasSettingsKeyPressed = false;
+				}
 			}
 		} else {
 			// Player left the world — save and clear waypoints
 			if (!lastWorldId.isEmpty()) {
 				WaypointManager.instance.clearForWorldLeave();
+				MapTileManager.instance.clearForWorldLeave();
+				SpawnTracker.instance.onWorldLeave();
 				lastWorldId = "";
 			}
 		}
@@ -151,5 +184,6 @@ public class MinecraftMixin {
 	private void onShutdown(CallbackInfo ci) {
 		MapConfig.instance.saveConfig();
 		WaypointManager.instance.save();
+		MapTileManager.instance.saveAll();
 	}
 }

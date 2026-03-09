@@ -138,7 +138,62 @@ public class WaypointManager {
         return name.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
+    /**
+     * Get the world ID for a specific dimension, derived from the current world ID.
+     */
+    public String getWorldIdForDim(int dim) {
+        if (currentWorldId.isEmpty())
+            return "";
+        // Replace _dim<N> with _dim<target>
+        int dimIdx = currentWorldId.lastIndexOf("_dim");
+        if (dimIdx < 0)
+            return currentWorldId;
+        return currentWorldId.substring(0, dimIdx) + "_dim" + dim;
+    }
+
+    /**
+     * Load waypoints for a specific dimension without changing the active waypoint
+     * set.
+     * Returns an empty list if no file exists.
+     */
+    public List<Waypoint> loadWaypointsForDim(int dim) {
+        String worldId = getWorldIdForDim(dim);
+        if (worldId.isEmpty())
+            return new ArrayList<Waypoint>();
+
+        File file = new File(WAYPOINT_DIR + "/" + worldId + ".json");
+        if (!file.exists())
+            return new ArrayList<Waypoint>();
+
+        try (FileReader reader = new FileReader(file)) {
+            Type listType = new TypeToken<List<Waypoint>>() {
+            }.getType();
+            List<Waypoint> loaded = gson.fromJson(reader, listType);
+            return loaded != null ? loaded : new ArrayList<Waypoint>();
+        } catch (Exception e) {
+            return new ArrayList<Waypoint>();
+        }
+    }
+
     public boolean hasWorld() {
         return !currentWorldId.isEmpty();
+    }
+
+    public void saveWaypointsForDim(int dim, List<Waypoint> list) {
+        String worldId = getWorldIdForDim(dim);
+        if (worldId.isEmpty())
+            return;
+
+        File dir = new File(WAYPOINT_DIR);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+
+        File file = new File(WAYPOINT_DIR + "/" + worldId + ".json");
+        try (FileWriter writer = new FileWriter(file)) {
+            gson.toJson(list, writer);
+        } catch (IOException e) {
+            System.err.println("[Minimap CE] Failed to save waypoints: " + e.getMessage());
+        }
     }
 }
