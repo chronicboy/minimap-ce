@@ -33,7 +33,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 
 ### Entity Radar
 - **Mob arrows visible on the minimap** — categorized by color: Red (hostile), Green (passive), Yellow (neutral).
-- **Player chevron** with a cyan center dot.
+- **Player chevron** in blue.
 
 ### Info HUD
 - **Tracks Time** — Day count, HH:MM, Day/Night indicator.
