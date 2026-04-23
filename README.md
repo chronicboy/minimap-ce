@@ -53,6 +53,6 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 
 ## Installation
 1. Install **Better Than Wolves CE 3.0.x** and the Fabric Loader (0.14.19 or later recommended).
-2. Download the `minimap-ce-3.0.2.jar` from the versions tab.
+2. Download the .jar file from Modrinth https://modrinth.com/mod/minimap-ce
 3. Drop the `.jar` into your Minecraft `.minecraft/mods/` folder.
 4. Launch the game!
