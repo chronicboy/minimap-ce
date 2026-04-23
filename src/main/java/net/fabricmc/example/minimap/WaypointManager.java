@@ -48,28 +48,42 @@ public class WaypointManager {
         }
     }
 
-    /**
-     * Builds a unique world identifier.
-     * Singleplayer: uses the world save folder name + dimension.
-     * Multiplayer: uses world name + dimension.
-     */
     public static String buildWorldId(World world) {
         if (world == null || world.getWorldInfo() == null || world.provider == null)
             return "";
 
-        String worldName = world.getWorldInfo().getWorldName();
         int dimension = world.provider.dimensionId;
+        String prefix = getWorldPrefix(world);
+
+        return prefix + "_dim" + dimension;
+    }
+
+    public static String getWorldPrefix(World world) {
+        if (world == null) return "";
         Minecraft mc = Minecraft.getMinecraft();
 
         String prefix;
         if (mc.isSingleplayer() && mc.getIntegratedServer() != null) {
             String folderName = mc.getIntegratedServer().getFolderName();
-            prefix = "sp_" + sanitizeFilename(folderName != null ? folderName : worldName);
+            // Get seed from the server-side world to ensure it's accurate and available
+            long seed = 0;
+            try {
+                seed = mc.getIntegratedServer().worldServerForDimension(0).getSeed();
+            } catch (Exception e) {
+                seed = world.getSeed(); // Fallback
+            }
+            // Include hex seed to differentiate between worlds with the same folder name
+            prefix = "sp_" + sanitizeFilename(folderName) + "_" + Long.toHexString(seed);
         } else {
-            prefix = "mp_" + sanitizeFilename(worldName);
+            String serverIP = "unknown";
+            if (mc.currentServerData != null && mc.currentServerData.serverIP != null) {
+                serverIP = mc.currentServerData.serverIP;
+            } else if (world.getWorldInfo() != null) {
+                serverIP = world.getWorldInfo().getWorldName();
+            }
+            prefix = "mp_" + sanitizeFilename(serverIP);
         }
-
-        return prefix + "_dim" + dimension;
+        return prefix;
     }
 
     public void loadForWorld(World world) {
@@ -132,7 +146,7 @@ public class WaypointManager {
         return new File(WAYPOINT_DIR + "/" + currentWorldId + ".json");
     }
 
-    private static String sanitizeFilename(String name) {
+    public static String sanitizeFilename(String name) {
         if (name == null || name.isEmpty())
             return "unknown";
         return name.replaceAll("[^a-zA-Z0-9._-]", "_");

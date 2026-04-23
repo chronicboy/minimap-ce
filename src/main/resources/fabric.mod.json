@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "minimap-ce",
-  "version": "3.0.2",
+  "version": "3.2.0",
   "name": "Minimap CE",
   "description": "JourneyMap-inspired minimap with texture-sampled colors, waypoint management, entity tracking, and in-world beacons for Better Than Wolves CE 3.0.0",
   "authors": [
@@ -21,6 +21,7 @@
   "custom": {
     "btw:addon_prefix": "NAV"
   },
+  "accessWidener": "minimap-ce.accesswidener",
   "mixins": [
     "minimap-ce.mixins.json"
   ],

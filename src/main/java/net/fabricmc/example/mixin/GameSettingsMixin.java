@@ -16,7 +16,7 @@ public abstract class GameSettingsMixin {
 	@Shadow
 	public KeyBinding[] keyBindings;
 
-	@Inject(method = "<init>(Lnet/minecraft/src/Minecraft;Ljava/io/File;)V", at = @At(value = "TAIL"))
+	@Inject(method = "<init>(Lnet/minecraft/src/Minecraft;Ljava/io/File;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/src/GameSettings;loadOptions()V"))
 	private void addMinimapKeybind(Minecraft par1Minecraft, File par2File, CallbackInfo ci) {
 		// Add to keyBindings array
 		KeyBinding[] newKeyBindings = new KeyBinding[keyBindings.length + 6];

@@ -25,6 +25,7 @@ public class MinecraftMixin {
 	private static boolean wasFullscreenMapKeyPressed = false;
 	private static boolean wasSettingsKeyPressed = false;
 	private static String lastWorldId = "";
+	private static World lastWorldInstance = null;
 	private static boolean wasDead = false;
 
 	@Inject(at = @At("HEAD"), method = "runTick")
@@ -33,12 +34,15 @@ public class MinecraftMixin {
 
 		if (mc.theWorld != null && mc.thePlayer != null) {
 			// Detect world changes and reload waypoints
-			String currentWorldId = WaypointManager.buildWorldId(mc.theWorld);
-			if (!currentWorldId.equals(lastWorldId)) {
-				lastWorldId = currentWorldId;
-				WaypointManager.instance.loadForWorld(mc.theWorld);
-				MapTileManager.instance.loadForWorld(mc.theWorld);
-				SpawnTracker.instance.onWorldLoad(mc);
+			if (mc.theWorld != lastWorldInstance) {
+				lastWorldInstance = mc.theWorld;
+				String currentWorldId = WaypointManager.buildWorldId(mc.theWorld);
+				if (!currentWorldId.equals(lastWorldId)) {
+					lastWorldId = currentWorldId;
+					WaypointManager.instance.loadForWorld(mc.theWorld);
+					MapTileManager.instance.loadForWorld(mc.theWorld);
+					SpawnTracker.instance.onWorldLoad(mc);
+				}
 			}
 
 			// Auto-save map tiles periodically

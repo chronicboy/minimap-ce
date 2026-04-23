@@ -22,15 +22,16 @@ public class MapConfig {
 	public int fullscreenZoom = 0;
 	public float minimapOpacity = 0.9f;
 	public boolean showTeleportButton = true;
+	public boolean useMinimapPadding = true;
 	public boolean fullscreenMapPausesGame = true;
 	public String teleportCommand = "/tp {x} {y} {z}";
 
-	public static KeyBinding toggleEntitiesKey = new KeyBinding("Toggle Entities", Keyboard.KEY_F);
-	public static KeyBinding increaseSizeKey = new KeyBinding("Minimap: Increase Size", Keyboard.KEY_RBRACKET);
-	public static KeyBinding decreaseSizeKey = new KeyBinding("Minimap: Decrease Size", Keyboard.KEY_LBRACKET);
-	public static KeyBinding waypointGuiKey = new KeyBinding("Waypoints", Keyboard.KEY_B);
-	public static KeyBinding fullscreenMapKey = new KeyBinding("Fullscreen Map", Keyboard.KEY_J);
-	public static KeyBinding settingsKey = new KeyBinding("Map Settings", Keyboard.KEY_O);
+	public static KeyBinding toggleEntitiesKey = new KeyBinding("[Minimap] Toggle Entities", Keyboard.KEY_F);
+	public static KeyBinding increaseSizeKey = new KeyBinding("[Minimap] Increase Size", Keyboard.KEY_RBRACKET);
+	public static KeyBinding decreaseSizeKey = new KeyBinding("[Minimap] Decrease Size", Keyboard.KEY_LBRACKET);
+	public static KeyBinding waypointGuiKey = new KeyBinding("[Minimap] Waypoints", Keyboard.KEY_B);
+	public static KeyBinding fullscreenMapKey = new KeyBinding("[Minimap] Fullscreen Map", Keyboard.KEY_J);
+	public static KeyBinding settingsKey = new KeyBinding("[Minimap] Map Settings", Keyboard.KEY_O);
 
 	public static MapConfig instance = new MapConfig();
 

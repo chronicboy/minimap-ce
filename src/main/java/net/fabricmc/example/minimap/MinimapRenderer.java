@@ -14,7 +14,21 @@ public class MinimapRenderer {
 	private int cachedZoomLevel = -999;
 	private int cachedMapSize = -1;
 	private long lastSaveTime = 0;
-	private final java.util.HashSet<Long> tempChunkSet = new java.util.HashSet<Long>();
+
+	// Texture optimization for high-refresh rates (250Hz+)
+	private int mapTextureId = -1;
+	private java.nio.IntBuffer mapBuffer = null;
+	private int[] mapPixels = null;
+	// HUD Cache
+	private String cachedClockStr = "";
+	private int cachedClockW = 0;
+	private String cachedCoordStr = "";
+	private int cachedCoordW = 0;
+	private String cachedBiomeName = "";
+	private int cachedBiomeW = 0;
+	private long lastClockTicks = -1;
+	private int lastCoordX = Integer.MIN_VALUE, lastCoordY = Integer.MIN_VALUE, lastCoordZ = Integer.MIN_VALUE;
+	private BiomeGenBase lastBiome = null;
 
 	public void renderMinimap(World world, EntityPlayer player, int screenWidth, int screenHeight, float partialTicks) {
 		if (world == null || player == null || !MapConfig.instance.minimapEnabled) {
@@ -29,36 +43,49 @@ public class MinimapRenderer {
 		int mapSize = MapConfig.instance.minimapSize;
 		int mapRadius = mapSize / 2;
 
+		// When padding is OFF, we use a "minimal" margin to ensure labels (N/E/S/W) 
+		// and HUD elements (Clock/Coords) stay visible on screen.
+		int marginX = MapConfig.instance.useMinimapPadding ? 10 : 4;
+		int marginY = MapConfig.instance.useMinimapPadding ? 10 : 2;
+		
+		if (!MapConfig.instance.useMinimapPadding) {
+			if (MapConfig.instance.minimapPosition <= 1) {
+				marginY = 18; // Room for Clock + North label
+			}
+		}
+
 		// Calculate position based on config
 		int mapX, mapY;
 		switch (MapConfig.instance.minimapPosition) {
 			case 0: // Top-left
-				mapX = 10;
-				mapY = 10;
+				mapX = marginX;
+				mapY = marginY;
 				break;
 			case 1: // Top-right
-				mapX = screenWidth - mapSize - 10;
-				mapY = 10;
+				mapX = screenWidth - mapSize - marginX;
+				mapY = marginY;
 				break;
 			case 2: // Bottom-left
-				mapX = 10;
-				mapY = screenHeight - mapSize - 10;
+				mapX = marginX;
+				mapY = screenHeight - mapSize - marginY;
 				break;
 			case 3: // Bottom-right
-				mapX = screenWidth - mapSize - 10;
-				mapY = screenHeight - mapSize - 10;
+				mapX = screenWidth - mapSize - marginX;
+				mapY = screenHeight - mapSize - marginY;
 				break;
 			default:
-				mapX = screenWidth - mapSize - 10;
-				mapY = 10;
+				mapX = screenWidth - mapSize - marginX;
+				mapY = marginY;
 		}
 
-		// Layout Adjustment: If top-aligned, push map down to make room for time
-		if (MapConfig.instance.minimapPosition <= 1) {
-			mapY += 20;
-		} else {
-			// If bottom-aligned, push map up to make room for coords/biome below
-			mapY -= 30;
+		// Layout Adjustment: Standard padding mode uses larger gaps and aesthetic offsets
+		if (MapConfig.instance.useMinimapPadding) {
+			if (MapConfig.instance.minimapPosition <= 1) {
+				mapY += 20;
+			} else {
+				// If bottom-aligned, push map up to make room for coords/biome below
+				mapY -= 30;
+			}
 		}
 
 		GL11.glPushMatrix();
@@ -74,22 +101,31 @@ public class MinimapRenderer {
 
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 
+		double interpPosX = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
+		double interpPosZ = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
+
 		int playerBlockX = (int) Math.floor(player.posX);
 		int playerBlockZ = (int) Math.floor(player.posZ);
 
-		// Sub-pixel offset for smooth scrolling (fractional part of player position)
-		double fracX = player.posX - playerBlockX;
-		double fracZ = player.posZ - playerBlockZ;
+		int pixelStep = zoomFactor < 0.25 ? 3 : (zoomFactor < 0.5 ? 2 : 1);
+		
+		// Stable alignment: Align the cache to the world grid based on the sampling density (pixelStep / zoomFactor)
+		// This prevents "shimmering" shading when zoomed out by keeping sampling points fixed relative to the world.
+		int alignBlocks = (int) Math.round(pixelStep / zoomFactor);
+		int playerCacheX = Math.floorDiv(playerBlockX, alignBlocks) * alignBlocks;
+		int playerCacheZ = Math.floorDiv(playerBlockZ, alignBlocks) * alignBlocks;
+
+		// Sub-pixel offset for smooth scrolling (relative to the stable cache center)
+		double fracX = interpPosX - playerCacheX;
+		double fracZ = interpPosZ - playerCacheZ;
 
 		// Check if cache needs refresh
 		boolean cacheValid = (colorCache != null && heightCache != null
 				&& cacheSize == mapSize
-				&& cachedPlayerX == playerBlockX
-				&& cachedPlayerZ == playerBlockZ
+				&& cachedPlayerX == playerCacheX
+				&& cachedPlayerZ == playerCacheZ
 				&& cachedZoomLevel == MapConfig.instance.zoomLevel
 				&& cachedMapSize == mapSize);
-
-		int pixelStep = zoomFactor < 0.25 ? 3 : (zoomFactor < 0.5 ? 2 : 1);
 
 		if (!cacheValid) {
 			// Rebuild cache
@@ -110,9 +146,9 @@ public class MinimapRenderer {
 						continue;
 					}
 
-					// Use integer-aligned center for stable sampling
-					int worldX = playerBlockX + (int) Math.floor((x - mapRadius) / zoomFactor);
-					int worldZ = playerBlockZ + (int) Math.floor((z - mapRadius) / zoomFactor);
+					// Use stable-aligned center for sampling
+					int worldX = playerCacheX + (int) Math.floor((x - mapRadius) / zoomFactor);
+					int worldZ = playerCacheZ + (int) Math.floor((z - mapRadius) / zoomFactor);
 
 					// Get color and height
 					long packed = getSurfaceInfo(world, worldX, worldZ, player);
@@ -150,13 +186,45 @@ public class MinimapRenderer {
 				}
 			}
 
-			cachedPlayerX = playerBlockX;
-			cachedPlayerZ = playerBlockZ;
+			cachedPlayerX = playerCacheX;
+			cachedPlayerZ = playerCacheZ;
 			cachedZoomLevel = MapConfig.instance.zoomLevel;
 			cachedMapSize = mapSize;
 
-			// Save explored terrain to persistent tile cache (throttled to every 500ms to
-			// prevent map holes)
+			// Update texture for hardware acceleration
+			if (mapTextureId == -1) {
+				mapTextureId = GL11.glGenTextures();
+			}
+
+			int texW = mapSize / pixelStep;
+			int texH = mapSize / pixelStep;
+			if (mapBuffer == null || mapBuffer.capacity() < texW * texH) {
+				mapBuffer = org.lwjgl.BufferUtils.createIntBuffer(texW * texH);
+				mapPixels = new int[texW * texH];
+			}
+
+			for (int ty = 0; ty < texH; ty++) {
+				for (int tx = 0; tx < texW; tx++) {
+					int color = colorCache[(ty * pixelStep) * mapSize + (tx * pixelStep)];
+					if (color != -1) {
+						mapPixels[ty * texW + tx] = 0xFF000000 | color;
+					} else {
+						mapPixels[ty * texW + tx] = 0x00000000;
+					}
+				}
+			}
+
+			mapBuffer.clear();
+			mapBuffer.put(mapPixels);
+			mapBuffer.flip();
+
+			GL11.glBindTexture(GL11.GL_TEXTURE_2D, mapTextureId);
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+			GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, texW, texH, 0, org.lwjgl.opengl.GL12.GL_BGRA,
+					org.lwjgl.opengl.GL12.GL_UNSIGNED_INT_8_8_8_8_REV, mapBuffer);
+
+			// Save explored terrain to persistent tile cache (throttled to every 500ms)
 			long now = System.currentTimeMillis();
 			if (MapTileManager.instance.hasWorld() && pixelStep == 1 && now - lastSaveTime > 500) {
 				lastSaveTime = now;
@@ -168,31 +236,27 @@ public class MinimapRenderer {
 		double offsetX = -fracX * zoomFactor;
 		double offsetZ = -fracZ * zoomFactor;
 
-		// Render from cache
-		Tessellator t = Tessellator.instance;
-		t.startDrawingQuads();
+		// Render map terrain using hardware-accelerated texture (ultra-fast at 250Hz+)
+		if (mapTextureId != -1) {
+			GL11.glEnable(GL11.GL_TEXTURE_2D);
+			GL11.glBindTexture(GL11.GL_TEXTURE_2D, mapTextureId);
+			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
-		for (int z = 0; z < mapSize; z += pixelStep) {
-			int zOffset = z * mapSize;
-			double basePz = mapY + z + offsetZ;
-			for (int x = 0; x < mapSize; x += pixelStep) {
-				int color = colorCache[zOffset + x];
-				if (color == -1)
-					continue;
+			Tessellator t = Tessellator.instance;
+			t.startDrawingQuads();
+			// We draw the texture slightly offset by the sub-pixel amount
+			double x1 = mapX + offsetX;
+			double y1 = mapY + offsetZ;
+			double x2 = x1 + mapSize;
+			double y2 = y1 + mapSize;
 
-				int r = (color >> 16) & 0xFF;
-				int g = (color >> 8) & 0xFF;
-				int b = color & 0xFF;
-
-				double px = mapX + x + offsetX;
-				t.setColorRGBA(r, g, b, 255);
-				t.addVertex(px, basePz + pixelStep, 0.0);
-				t.addVertex(px + pixelStep, basePz + pixelStep, 0.0);
-				t.addVertex(px + pixelStep, basePz, 0.0);
-				t.addVertex(px, basePz, 0.0);
-			}
+			t.addVertexWithUV(x1, y2, 0.0, 0.0, 1.0);
+			t.addVertexWithUV(x2, y2, 0.0, 1.0, 1.0);
+			t.addVertexWithUV(x2, y1, 0.0, 1.0, 0.0);
+			t.addVertexWithUV(x1, y1, 0.0, 0.0, 0.0);
+			t.draw();
+			GL11.glDisable(GL11.GL_TEXTURE_2D);
 		}
-		t.draw();
 
 		// Premium minimap frame: beveled ring with shadow depth
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -233,14 +297,15 @@ public class MinimapRenderer {
 		}
 
 		if (MapConfig.instance.showEntities) {
-			renderEntitiesOnMap(world, player, mapX, mapY, mapSize, mapRadius, zoomFactor);
+			renderEntitiesOnMap(world, player, mapX, mapY, mapSize, mapRadius, zoomFactor, partialTicks);
 		}
 
 		int centerX = mapX + mapRadius;
 		int centerY = mapY + mapRadius;
 
-		// Player Arrow (Updated Logic)
-		drawPlayerArrow(centerX, centerY, player.rotationYaw);
+		// Player Arrow (Interpolated rotation for smooth turning)
+		float interpYaw = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks;
+		drawPlayerArrow(centerX, centerY, interpYaw);
 
 		if (MapConfig.instance.showCompass) {
 			drawCompassLabels(centerX, centerY, mapRadius);
@@ -275,11 +340,7 @@ public class MinimapRenderer {
 		b = (int) (b * factor);
 		return (r << 16) | (g << 8) | b;
 	}
-
 	private void saveExploredChunks(World world, EntityPlayer player, int mapSize, int mapRadius, double zoomFactor) {
-		// Reuse field-level set to avoid per-call allocation
-		tempChunkSet.clear();
-
 		// Calculate world bounds based on map radius and zoom
 		// Add 1 chunk padding so we catch chunks right at the edge of the load distance
 		int worldRadius = (int) Math.ceil(mapRadius / zoomFactor);
@@ -290,42 +351,50 @@ public class MinimapRenderer {
 
 		for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
 			for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
-				long chunkKey = MapTileManager.packChunkCoords(chunkX, chunkZ);
-				if (tempChunkSet.contains(chunkKey))
-					continue;
 
-				// Check if this chunk is loaded
-				if (!world.getChunkProvider().chunkExists(chunkX, chunkZ))
+				// Check if this chunk AND its neighbors are loaded.
+				// This skips the "bleeding edge" chunks that haven't been populated with trees/snow yet.
+				net.minecraft.src.IChunkProvider provider = world.getChunkProvider();
+				if (!provider.chunkExists(chunkX, chunkZ) ||
+					!provider.chunkExists(chunkX + 1, chunkZ) ||
+					!provider.chunkExists(chunkX - 1, chunkZ) ||
+					!provider.chunkExists(chunkX, chunkZ + 1) ||
+					!provider.chunkExists(chunkX, chunkZ - 1)) {
 					continue;
-
-				// Check if we should skip saving this chunk
-				int[] existing = MapTileManager.instance.getChunkColors(chunkX, chunkZ);
-				if (existing != null) {
-					boolean hasEmpty = false;
-					for (int i = 0; i < 256; i++) {
-						if (existing[i] == 0) {
-							hasEmpty = true;
-							break;
-						}
-					}
-					// If the chunk is fully cached and has no holes, skip re-evaluating it
-					if (!hasEmpty)
-						continue;
 				}
 
-				tempChunkSet.add(chunkKey);
+				int[] existing = MapTileManager.instance.getChunkColors(chunkX, chunkZ);
 
 				// Sample the full 16x16 chunk
+				// Start with existing data if available, so we don't overwrite valid tiles with 0
 				int[] colors = new int[256];
+				if (existing != null) {
+					System.arraycopy(existing, 0, colors, 0, 256);
+				}
+				
+				boolean changed = (existing == null);
+
 				for (int lz = 0; lz < 16; lz++) {
 					for (int lx = 0; lx < 16; lx++) {
 						int bx = chunkX * 16 + lx;
 						int bz = chunkZ * 16 + lz;
 						long packed = getSurfaceInfo(world, bx, bz, player);
-						colors[lz * 16 + lx] = (int) (packed >> 32);
+						int color = (int) (packed >> 32) & 0xFFFFFF;
+						int height = (int) (packed & 0xFF);
+						// Only save non-zero colors to avoid writing "no data" over valid cached data
+						if (color != 0) {
+							int newColor = (height << 24) | color;
+							if (colors[lz * 16 + lx] != newColor) {
+								colors[lz * 16 + lx] = newColor;
+								changed = true;
+							}
+						}
 					}
 				}
-				MapTileManager.instance.saveChunkColors(chunkX, chunkZ, colors);
+				
+				if (changed) {
+					MapTileManager.instance.saveChunkColors(chunkX, chunkZ, colors);
+				}
 			}
 		}
 	}
@@ -369,6 +438,7 @@ public class MinimapRenderer {
 
 		Block block = null;
 		int blockY = h;
+		int fallbackY = -1; // Track first non-zero block ID (BTW CE custom blocks)
 		for (int y = Math.min(h + 3, 256); y >= Math.max(h - 3, 0); y--) {
 			int blockId = world.getBlockId(x, y, z);
 			if (blockId == 0)
@@ -379,10 +449,21 @@ public class MinimapRenderer {
 				blockY = y;
 				break;
 			}
+			// BTW CE custom block: block ID exists but not in vanilla blocksList
+			if (fallbackY == -1) {
+				fallbackY = y;
+			}
 		}
 
-		if (block == null)
-			return 0xFF000000L | blockY;
+		// If no recognized block found, use fallback for unrecognized blocks
+		if (block == null) {
+			if (fallbackY != -1) {
+				// Non-zero block ID existed but wasn't in blocksList (BTW CE custom block)
+				return ((long) 0x8a8a8a << 32) | (long) fallbackY;
+			}
+			// Truly empty (unloaded chunk or air column) — return 0 color for "no data"
+			return (long) blockY;
+		}
 
 		int color = BlockColorMapper.getBlockColor(block, world, x, blockY, z);
 		if (color == 0 || color == 0x000000) {
@@ -472,66 +553,79 @@ public class MinimapRenderer {
 		GL11.glPushMatrix();
 		GL11.glScalef(textScale, textScale, 1.0f);
 
-		// 1. Time Overlay
+		// 1. Time Overlay (Cycle Timer: 00:00 - 19:59)
 		long time = world.getWorldTime();
-		long dayTime = time % 24000;
-		int days = (int) (time / 24000) + 1;
-		int hours = (int) ((dayTime / 1000 + 6) % 24);
-		int minutes = (int) ((dayTime % 1000) * 60 / 1000);
+		long dayTicks = time % 24000;
+		if (dayTicks < 0) dayTicks += 24000;
+		
+		// Update clock cache only once per second (20 ticks)
+		if (dayTicks / 20 != lastClockTicks) {
+			lastClockTicks = dayTicks / 20;
+			int days = (int) Math.floor(time / 24000.0) + 1;
+			boolean isDay = world.isDaytime();
+			String prefix = isDay ? "Day" : "Night";
+			int totalSeconds = (int) lastClockTicks;
+			int minutes = totalSeconds / 60;
+			int seconds = totalSeconds % 60;
+			cachedClockStr = String.format("%s %d, %02d:%02d", prefix, days, minutes, seconds);
+			cachedClockW = (int) (fr.getStringWidth(cachedClockStr) * textScale) + 8;
+		}
 
-		String timeStr = String.format("Day %d, %02d:%02d", days, hours, minutes);
-		String period = (hours >= 6 && hours < 19) ? "Day" : "Night";
-		String clockStr = timeStr + " " + period;
-
-		int centerX = mapX + mapRadius;
-
-		int clockW = (int) (fr.getStringWidth(clockStr) * textScale) + 8;
 		int clockH = (int) (12 * textScale);
 
-		// Position: Fixed above map (clamp to screen)
-		int clockY = Math.max(2, mapY - clockH - 8);
-		int clockX = centerX - clockW / 2;
-		clockX = Math.max(2, Math.min(clockX, screenWidth - clockW - 2));
-
-		fr.drawStringWithShadow(clockStr, (int) ((clockX + 4) * invScale), (int) ((clockY + 2 * textScale) * invScale),
-				0xFFFFFF);
-
+		// 2. Coordinate & Biome Logic
 		int x = (int) player.posX;
 		int y = (int) player.posY;
 		int z = (int) player.posZ;
-		String coordStr = String.format("x: %d, z: %d, y: %d", x, z, y);
-		BiomeGenBase biome = world.getBiomeGenForCoords(x, z);
-		String biomeName = biome != null ? biome.biomeName : "Unknown";
+		
+		if (x != lastCoordX || y != lastCoordY || z != lastCoordZ) {
+			lastCoordX = x; lastCoordY = y; lastCoordZ = z;
+			cachedCoordStr = String.format("x: %d, z: %d, y: %d", x, z, y);
+			cachedCoordW = (int) (fr.getStringWidth(cachedCoordStr) * textScale) + 8;
+			
+			BiomeGenBase biome = world.getBiomeGenForCoords(x, z);
+			if (biome != lastBiome) {
+				lastBiome = biome;
+				cachedBiomeName = biome != null ? biome.biomeName : "Unknown";
+				cachedBiomeW = (int) (fr.getStringWidth(cachedBiomeName) * textScale) + 8;
+			}
+		}
 
-		int coordW = (int) (fr.getStringWidth(coordStr) * textScale) + 8;
-		int biomeW = (int) (fr.getStringWidth(biomeName) * textScale) + 8;
-		int maxInfoW = Math.max(coordW, biomeW);
-
+		int maxInfoW = Math.max(cachedCoordW, cachedBiomeW);
 		boolean showCoords = MapConfig.instance.showCoordinates;
 		boolean showBiome = MapConfig.instance.showBiome;
 		int infoLines = (showCoords ? 1 : 0) + (showBiome ? 1 : 0);
 		int infoH = (int) (infoLines * 12 * textScale);
-		if (infoH == 0) {
-			GL11.glPopMatrix();
-			return; // Nothing to show
-		}
 
-		// Place below map, clamp to screen bounds
-		int infoY = mapY + mapSize + 8;
+		int gap = MapConfig.instance.useMinimapPadding ? 8 : 2;
+		boolean isBottom = MapConfig.instance.minimapPosition >= 2;
+		int centerX = mapX + mapRadius;
+
+		// 1. Clock Position
+		int clockY = isBottom ? (mapY - clockH - (infoH > 0 ? infoH + gap + 2 : gap)) : (mapY - clockH - gap);
+		clockY = Math.max(2, clockY);
+		int clockX = centerX - cachedClockW / 2;
+		clockX = Math.max(2, Math.min(clockX, screenWidth - cachedClockW - 2));
+
+		fr.drawStringWithShadow(cachedClockStr, (int) ((clockX + 4) * invScale), (int) ((clockY + 2 * textScale) * invScale),
+				0xFFFFFF);
+
+		// 2. Info Position
+		int infoY = isBottom ? (mapY - infoH - gap) : (mapY + mapSize + gap);
 		infoY = Math.min(infoY, screenHeight - infoH - 2);
 		int infoX = centerX - maxInfoW / 2;
 		infoX = Math.max(2, Math.min(infoX, screenWidth - maxInfoW - 2));
 
 		int textY = infoY + (int) (2 * textScale);
 		if (showCoords) {
-			int coordTxtW = (int) (fr.getStringWidth(coordStr) * textScale);
-			fr.drawStringWithShadow(coordStr, (int) ((infoX + (maxInfoW - coordTxtW) / 2) * invScale),
+			int coordTxtW = (int) (fr.getStringWidth(cachedCoordStr) * textScale);
+			fr.drawStringWithShadow(cachedCoordStr, (int) ((infoX + (maxInfoW - coordTxtW) / 2) * invScale),
 					(int) (textY * invScale), 0xFFFFFF);
 			textY += (int) (12 * textScale);
 		}
 		if (showBiome) {
-			int biomeTxtW = (int) (fr.getStringWidth(biomeName) * textScale);
-			fr.drawStringWithShadow(biomeName, (int) ((infoX + (maxInfoW - biomeTxtW) / 2) * invScale),
+			int biomeTxtW = (int) (fr.getStringWidth(cachedBiomeName) * textScale);
+			fr.drawStringWithShadow(cachedBiomeName, (int) ((infoX + (maxInfoW - biomeTxtW) / 2) * invScale),
 					(int) (textY * invScale), 0xAAAAAA);
 		}
 
@@ -577,10 +671,13 @@ public class MinimapRenderer {
 	}
 
 	private void renderEntitiesOnMap(World world, EntityPlayer player, int mapX, int mapY, int mapSize, int mapRadius,
-			double zoomFactor) {
+			double zoomFactor, float partialTicks) {
 		double startX = player.posX;
 		double startZ = player.posZ;
 		double maxDist = mapRadius / zoomFactor;
+
+		double interpPosX = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
+		double interpPosZ = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
 
 		int entityCount = 0;
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -598,7 +695,6 @@ public class MinimapRenderer {
 				continue;
 			if (e instanceof EntitySquid || e instanceof EntityBat)
 				continue;
-
 			double dx = e.posX - startX;
 			double dz = e.posZ - startZ;
 			if (Math.abs(dx) > maxDist || Math.abs(dz) > maxDist)
@@ -606,12 +702,20 @@ public class MinimapRenderer {
 			if (Math.abs(e.posY - player.posY) > 20)
 				continue;
 
-			int px = mapX + mapRadius + (int) (dx * zoomFactor);
-			int pz = mapY + mapRadius + (int) (dz * zoomFactor);
+			// Interpolated entity position for smooth movement
+			double interpEx = e.prevPosX + (e.posX - e.prevPosX) * partialTicks;
+			double interpEz = e.prevPosZ + (e.posZ - e.prevPosZ) * partialTicks;
+			float interpEyaw = e.prevRotationYaw + (e.rotationYaw - e.prevRotationYaw) * partialTicks;
+
+			double edx = interpEx - interpPosX;
+			double edz = interpEz - interpPosZ;
+
+			double px = mapX + mapRadius + (edx * zoomFactor);
+			double pz = mapY + mapRadius + (edz * zoomFactor);
 
 			if (px >= mapX && px < mapX + mapSize && pz >= mapY && pz < mapY + mapSize) {
 				if (MapConfig.instance.circular) {
-					double d = Math.sqrt((dx * zoomFactor) * (dx * zoomFactor) + (dz * zoomFactor) * (dz * zoomFactor));
+					double d = Math.sqrt((edx * zoomFactor) * (edx * zoomFactor) + (edz * zoomFactor) * (edz * zoomFactor));
 					if (d > mapRadius)
 						continue;
 				}
@@ -632,13 +736,13 @@ public class MinimapRenderer {
 					b = 0.1f;
 				}
 
-				drawEntityArrow(px, pz, e.rotationYaw, r, g, b);
+				drawEntityArrow(px, pz, interpEyaw, r, g, b);
 			}
 		}
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 	}
 
-	private void drawEntityArrow(int x, int y, float yaw, float r, float g, float b) {
+	private void drawEntityArrow(double x, double y, float yaw, float r, float g, float b) {
 		Tessellator t = Tessellator.instance;
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		GL11.glDisable(GL11.GL_CULL_FACE);
@@ -713,16 +817,16 @@ public class MinimapRenderer {
 		t.addVertex(wingRX, wingRY, 0.0);
 		t.draw();
 
-		// 3. Main body fill — dark navy blue
+		// 3. Main body fill — Deep Gold
 		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorOpaque_F(0.10f, 0.15f, 0.30f);
+		t.setColorOpaque_F(0.65f, 0.45f, 0.05f);
 		t.addVertex(tipX, tipY, 0.0);
 		t.addVertex(wingLX, wingLY, 0.0);
 		t.addVertex(tailX, tailY, 0.0);
 		t.addVertex(wingRX, wingRY, 0.0);
 		t.draw();
 
-		// 4. Bright cyan inner highlight (slightly smaller)
+		// 4. Bright gold inner highlight
 		double hs = 0.6;
 		double hTipX = centerX + Math.cos(angle) * (sz * hs);
 		double hTipY = centerY + Math.sin(angle) * (sz * hs);
@@ -734,7 +838,7 @@ public class MinimapRenderer {
 		double hTailY = centerY + Math.sin(angle + Math.PI) * (sz * 0.08);
 
 		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorOpaque_F(0.2f, 0.75f, 1.0f);
+		t.setColorOpaque_F(1.0f, 0.85f, 0.2f);
 		t.addVertex(hTipX, hTipY, 0.0);
 		t.addVertex(hWingLX, hWingLY, 0.0);
 		t.addVertex(hTailX, hTailY, 0.0);

@@ -1,0 +1,12 @@
+accessWidener	v1	named
+
+# Minecraft class
+accessible	field	net/minecraft/src/Minecraft	session	Lnet/minecraft/src/Session;
+accessible	field	net/minecraft/src/Minecraft	currentServerData	Lnet/minecraft/src/ServerData;
+
+# Session class
+accessible	field	net/minecraft/src/Session	username	Ljava/lang/String;
+accessible	field	net/minecraft/src/Session	sessionId	Ljava/lang/String;
+
+# ServerData class
+accessible	field	net/minecraft/src/ServerData	serverIP	Ljava/lang/String;
