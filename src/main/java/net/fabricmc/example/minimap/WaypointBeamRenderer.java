@@ -96,7 +96,19 @@ public class WaypointBeamRenderer {
         double renderDx = dx;
         double renderDy = dy;
         double renderDz = dz;
-        double maxRender = 200.0; // Stay within GL clip range
+
+        // Use the actual clipping distance from the renderer, but stay within GL clip range
+        // Note: 0.95 factor ensures it's clearly inside the clipping plane
+        double maxRender = 500.0; 
+        
+        try {
+            // Shadow access to farPlaneDistance would be better, but we can safely 
+            // calculate it from renderDistance setting if field access is complex.
+            // Short = 32, Tiny = 16, etc.
+            float farPlane = 256 >> mc.gameSettings.renderDistance;
+            maxRender = Math.min(500.0, farPlane * 0.95);
+        } catch (Exception e) {}
+
         if (distH > maxRender) {
             double ratio = maxRender / distH;
             renderDx = dx * ratio;
@@ -113,7 +125,8 @@ public class WaypointBeamRenderer {
             renderDiamond(renderDx, renderDy, renderDz, r, g, b, 1.0f, mc);
         } else {
             if (focused) {
-                renderLabel(name, color, renderDx, renderDy, renderDz, dist3D, 1.0f, mc);
+                double renderDist3D = Math.sqrt(renderDx * renderDx + renderDy * renderDy + renderDz * renderDz);
+                renderLabel(name, color, renderDx, renderDy, renderDz, dist3D, renderDist3D, 1.0f, mc);
             }
         }
     }
@@ -212,18 +225,19 @@ public class WaypointBeamRenderer {
     }
 
     private static void renderLabel(String name, int color, double dx, double dy, double dz,
-            double dist, float alpha, Minecraft mc) {
+            double trueDist, double renderDist, float alpha, Minecraft mc) {
         FontRenderer fr = mc.fontRenderer;
         if (fr == null)
             return;
 
         dy += 1.5;
 
-        int blockDist = (int) dist;
+        int blockDist = (int) trueDist;
         String text = name + " (" + blockDist + "m)";
 
-        // Scale text with distance, capped for readability
-        float scale = (float) Math.max(0.04, Math.min(0.6, dist * 0.003 + 0.04));
+        // Scale text with the visual rendered distance, not the true distance,
+        // so it doesn't look gigantic when projected closer at low render distances.
+        float scale = (float) Math.max(0.04, Math.min(0.6, renderDist * 0.003 + 0.04));
         int textW = fr.getStringWidth(text);
         int textH = 8;
 
