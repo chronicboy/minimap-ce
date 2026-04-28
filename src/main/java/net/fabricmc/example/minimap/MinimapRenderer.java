@@ -484,7 +484,8 @@ public class MinimapRenderer {
 	private void renderGrid(int mapX, int mapY, int mapSize, int mapRadius, double zoomFactor) {
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		GL11.glColor4f(1f, 1f, 1f, 0.15f);
-		int chunkStep = (int) (16 / zoomFactor);
+
+		int chunkStep = (int) (16 * zoomFactor);
 		if (chunkStep < 2)
 			chunkStep = 2;
 
