@@ -31,3 +31,7 @@ run/
 journeymap_decompiled/
 journeymap_extracted/
 *.jar
+
+# changelogs
+changelog_*.md
+CHANGELOG_MODRINTH.md
