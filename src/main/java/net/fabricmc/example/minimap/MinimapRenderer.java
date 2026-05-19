@@ -12,7 +12,6 @@ public class MinimapRenderer {
 	private int cachedPlayerX = Integer.MIN_VALUE;
 	private int cachedPlayerZ = Integer.MIN_VALUE;
 	private int cachedZoomLevel = -999;
-	private int cachedMapSize = -1;
 	private long lastSaveTime = 0;
 
 	// Texture optimization for high-refresh rates (250Hz+)
@@ -124,8 +123,7 @@ public class MinimapRenderer {
 				&& cacheSize == mapSize
 				&& cachedPlayerX == playerCacheX
 				&& cachedPlayerZ == playerCacheZ
-				&& cachedZoomLevel == MapConfig.instance.zoomLevel
-				&& cachedMapSize == mapSize);
+				&& cachedZoomLevel == MapConfig.instance.zoomLevel);
 
 		if (!cacheValid) {
 			// Rebuild cache
@@ -189,7 +187,6 @@ public class MinimapRenderer {
 			cachedPlayerX = playerCacheX;
 			cachedPlayerZ = playerCacheZ;
 			cachedZoomLevel = MapConfig.instance.zoomLevel;
-			cachedMapSize = mapSize;
 
 			// Update texture for hardware acceleration
 			if (mapTextureId == -1) {
@@ -284,7 +281,7 @@ public class MinimapRenderer {
 		GL11.glLineWidth(1.0f);
 
 		if (MapConfig.instance.showChunkGrid) {
-			renderGrid(mapX, mapY, mapSize, mapRadius, zoomFactor);
+			renderGrid(mapX, mapY, mapSize, mapRadius, zoomFactor, interpPosX, interpPosZ);
 		}
 
 		if (MapConfig.instance.showSpawnWaypoint) {
@@ -349,12 +346,12 @@ public class MinimapRenderer {
 		int minChunkZ = (((int) player.posZ - worldRadius) >> 4) - 1;
 		int maxChunkZ = (((int) player.posZ + worldRadius) >> 4) + 1;
 
+		net.minecraft.src.IChunkProvider provider = world.getChunkProvider();
 		for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
 			for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
 
 				// Check if this chunk AND its neighbors are loaded.
 				// This skips the "bleeding edge" chunks that haven't been populated with trees/snow yet.
-				net.minecraft.src.IChunkProvider provider = world.getChunkProvider();
 				if (!provider.chunkExists(chunkX, chunkZ) ||
 					!provider.chunkExists(chunkX + 1, chunkZ) ||
 					!provider.chunkExists(chunkX - 1, chunkZ) ||
@@ -481,23 +478,39 @@ public class MinimapRenderer {
 		return ((long) color << 32) | (long) blockY;
 	}
 
-	private void renderGrid(int mapX, int mapY, int mapSize, int mapRadius, double zoomFactor) {
+	private void renderGrid(int mapX, int mapY, int mapSize, int mapRadius, double zoomFactor, double playerX, double playerZ) {
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		GL11.glColor4f(1f, 1f, 1f, 0.15f);
-
-		int chunkStep = (int) (16 * zoomFactor);
-		if (chunkStep < 2)
-			chunkStep = 2;
 
 		int centerX = mapX + mapRadius;
 		int centerY = mapY + mapRadius;
 
-		for (int gx = mapRadius % chunkStep; gx < mapSize; gx += chunkStep) {
-			drawLineSegmentInCircle(mapX + gx, mapY, mapX + gx, mapY + mapSize, centerX, centerY, mapRadius);
+		// Calculate the offset of the player within the world's 16x16 grid
+		// and convert that into map pixels.
+		double chunkStep = 16.0 * zoomFactor;
+		double offsetX = (playerX % 16.0) * zoomFactor;
+		double offsetZ = (playerZ % 16.0) * zoomFactor;
+
+		// Draw Vertical Lines (X boundaries)
+		for (double gx = mapRadius - offsetX; gx < mapSize; gx += chunkStep) {
+			if (gx < 0) continue;
+			drawLineSegmentInCircle(mapX + (int)gx, mapY, mapX + (int)gx, mapY + mapSize, centerX, centerY, mapRadius);
 		}
-		for (int gz = mapRadius % chunkStep; gz < mapSize; gz += chunkStep) {
-			drawLineSegmentInCircle(mapX, mapY + gz, mapX + mapSize, mapY + gz, centerX, centerY, mapRadius);
+		for (double gx = mapRadius - offsetX - chunkStep; gx > 0; gx -= chunkStep) {
+			if (gx > mapSize) continue;
+			drawLineSegmentInCircle(mapX + (int)gx, mapY, mapX + (int)gx, mapY + mapSize, centerX, centerY, mapRadius);
 		}
+
+		// Draw Horizontal Lines (Z boundaries)
+		for (double gz = mapRadius - offsetZ; gz < mapSize; gz += chunkStep) {
+			if (gz < 0) continue;
+			drawLineSegmentInCircle(mapX, mapY + (int)gz, mapX + mapSize, mapY + (int)gz, centerX, centerY, mapRadius);
+		}
+		for (double gz = mapRadius - offsetZ - chunkStep; gz > 0; gz -= chunkStep) {
+			if (gz > mapSize) continue;
+			drawLineSegmentInCircle(mapX, mapY + (int)gz, mapX + mapSize, mapY + (int)gz, centerX, centerY, mapRadius);
+		}
+		
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 	}
 
@@ -512,6 +525,7 @@ public class MinimapRenderer {
 		int centerX = mapX + mapRadius;
 		int centerY = mapY + mapRadius;
 
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		for (Waypoint wp : waypoints) {
 			if (!wp.enabled)
 				continue;
@@ -522,20 +536,18 @@ public class MinimapRenderer {
 
 			int px = centerX + (int) dx;
 			int pz = centerY + (int) dz;
-			boolean withinMap = dist <= mapRadius - 4; // Keep inside map bounds
+			boolean withinMap = dist <= mapRadius - 4;
 
-			GL11.glDisable(GL11.GL_TEXTURE_2D);
 			if (withinMap) {
 				drawWaypointMarker(px, pz, 4, wp.getRed(), wp.getGreen(), wp.getBlue());
 			} else {
-				// Edge rendering
 				double angle = Math.atan2(dz, dx);
 				int edgeX = centerX + (int) (Math.cos(angle) * (mapRadius - 5));
 				int edgeY = centerY + (int) (Math.sin(angle) * (mapRadius - 5));
 				drawWaypointMarker(edgeX, edgeY, 4, wp.getRed(), wp.getGreen(), wp.getBlue());
 			}
-			GL11.glEnable(GL11.GL_TEXTURE_2D);
 		}
+		GL11.glEnable(GL11.GL_TEXTURE_2D);
 	}
 
 	private void renderInfoOverlay(World world, EntityPlayer player, int mapX, int mapY, int mapSize, int mapRadius,

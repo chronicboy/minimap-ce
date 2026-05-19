@@ -32,6 +32,11 @@ public class GuiFullscreenMap extends GuiScreen {
 	private int dragStartX, dragStartY;
 	private double dragStartCenterX, dragStartCenterZ;
 
+	// Double click state
+	private long lastClickTime = 0;
+	private int lastClickX = 0;
+	private int lastClickY = 0;
+
 	// Cache
 	private int[] mapColorCache;
 	private int[] mapHeightCache;
@@ -426,23 +431,20 @@ public class GuiFullscreenMap extends GuiScreen {
 
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 
-		// Bottom bar info: cursor coordinates + biome
+		// Bottom bar info: cursor coordinates
 		if (fr != null) {
 			int halfW = mapW / 2;
 			int halfH = mapH / 2;
-			int cursorWorldX = (int) (viewCenterX + (mouseX - mapLeft - halfW) / zoomFactor);
-			int cursorWorldZ = (int) (viewCenterZ + (mouseY - mapTop - halfH) / zoomFactor);
+			int cursorWorldX = (int) Math.floor(viewCenterX + (mouseX - mapLeft - halfW) / zoomFactor);
+			int cursorWorldZ = (int) Math.floor(viewCenterZ + (mouseY - mapTop - halfH) / zoomFactor);
 
 			String cursorCoords = String.format("Cursor: x: %d, z: %d", cursorWorldX, cursorWorldZ);
-			BiomeGenBase biome = world.getBiomeGenForCoords(cursorWorldX, cursorWorldZ);
-			String biomeName = biome != null ? biome.biomeName : "Unknown";
+
 			String playerCoords = String.format("Player: x: %d, y: %d, z: %d",
 					(int) player.posX, (int) player.posY, (int) player.posZ);
 
 			int bottomTextY = this.height - BOTTOM_BAR_HEIGHT + 5;
 			fr.drawStringWithShadow(cursorCoords, 6, bottomTextY, 0xCCCCCC);
-			fr.drawStringWithShadow("\u00a77" + biomeName, 6 + fr.getStringWidth(cursorCoords) + 12, bottomTextY,
-					0x999999);
 
 			// Player coords on the right
 			fr.drawStringWithShadow(playerCoords, this.width - fr.getStringWidth(playerCoords) - 6, bottomTextY,
@@ -730,6 +732,27 @@ public class GuiFullscreenMap extends GuiScreen {
 		if (mouseButton != 0)
 			return;
 
+		long now = System.currentTimeMillis();
+		if (now - lastClickTime < 300 && Math.abs(mouseX - lastClickX) < 5 && Math.abs(mouseY - lastClickY) < 5) {
+			if (mouseY >= TOP_BAR_HEIGHT && mouseY < this.height - BOTTOM_BAR_HEIGHT) {
+				double zoomFactor = Math.pow(2.0, -MapConfig.instance.fullscreenZoom);
+				int mapW = this.width;
+				int mapH = this.height - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT;
+				int halfW = mapW / 2;
+				int halfH = mapH / 2;
+				int cursorWorldX = (int) (viewCenterX + (mouseX - halfW) / zoomFactor);
+				int cursorWorldZ = (int) (viewCenterZ + (mouseY - TOP_BAR_HEIGHT - halfH) / zoomFactor);
+				
+				Waypoint newWp = new Waypoint("New Waypoint", cursorWorldX, 64, cursorWorldZ, 0xFF5555);
+				WaypointManager.instance.addWaypoint(newWp);
+				this.mc.displayGuiScreen(new GuiWaypointEdit(this, newWp, true));
+				return;
+			}
+		}
+		lastClickTime = now;
+		lastClickX = mouseX;
+		lastClickY = mouseY;
+
 		// Check dimension tab clicks in top bar
 		Minecraft mcInst = Minecraft.getMinecraft();
 		FontRenderer fr2 = mcInst.fontRenderer;
@@ -805,8 +828,6 @@ public class GuiFullscreenMap extends GuiScreen {
 		cachedCenterZ = Double.MIN_VALUE;
 		cachedZoom = Integer.MIN_VALUE;
 		cachedViewDim = Integer.MIN_VALUE;
-		mapColorCache = null;
-		mapHeightCache = null;
 	}
 
 	@Override
