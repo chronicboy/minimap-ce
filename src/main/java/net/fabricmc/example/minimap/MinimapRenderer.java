@@ -18,6 +18,7 @@ public class MinimapRenderer {
 	private int mapTextureId = -1;
 	private java.nio.IntBuffer mapBuffer = null;
 	private int[] mapPixels = null;
+	private final int[] sampleChunkBuffer = new int[256];
 	// HUD Cache
 	private String cachedClockStr = "";
 	private int cachedClockW = 0;
@@ -362,11 +363,11 @@ public class MinimapRenderer {
 
 				int[] existing = MapTileManager.instance.getChunkColors(chunkX, chunkZ);
 
-				// Sample the full 16x16 chunk
-				// Start with existing data if available, so we don't overwrite valid tiles with 0
-				int[] colors = new int[256];
+				// Sample the full 16x16 chunk into reusable buffer
 				if (existing != null) {
-					System.arraycopy(existing, 0, colors, 0, 256);
+					System.arraycopy(existing, 0, sampleChunkBuffer, 0, 256);
+				} else {
+					java.util.Arrays.fill(sampleChunkBuffer, 0);
 				}
 				
 				boolean changed = (existing == null);
@@ -381,8 +382,8 @@ public class MinimapRenderer {
 						// Only save non-zero colors to avoid writing "no data" over valid cached data
 						if (color != 0) {
 							int newColor = (height << 24) | color;
-							if (colors[lz * 16 + lx] != newColor) {
-								colors[lz * 16 + lx] = newColor;
+							if (sampleChunkBuffer[lz * 16 + lx] != newColor) {
+								sampleChunkBuffer[lz * 16 + lx] = newColor;
 								changed = true;
 							}
 						}
@@ -390,7 +391,7 @@ public class MinimapRenderer {
 				}
 				
 				if (changed) {
-					MapTileManager.instance.saveChunkColors(chunkX, chunkZ, colors);
+					MapTileManager.instance.saveChunkColors(chunkX, chunkZ, sampleChunkBuffer);
 				}
 			}
 		}
@@ -694,6 +695,10 @@ public class MinimapRenderer {
 
 		int entityCount = 0;
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		GL11.glDisable(GL11.GL_CULL_FACE);
+		GL11.glEnable(GL11.GL_BLEND);
+		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+
 		for (Object obj : world.loadedEntityList) {
 			if (entityCount > 100)
 				break;
@@ -735,61 +740,90 @@ public class MinimapRenderer {
 
 				entityCount++;
 
-				// Colors: Hostile=Red, Passive=Green, Neutral=Yellow
-				float r = 1.0f, g = 1.0f, b = 0.0f; // Default Yellow (Neutral)
-				if (e instanceof EntityMob) {
-					// Hostile
-					r = 0.9f;
-					g = 0.1f;
-					b = 0.1f;
-				} else if (e instanceof EntityAnimal) {
-					// Passive
-					r = 0.1f;
-					g = 0.9f;
-					b = 0.1f;
+				// Colors: Hostile=Crimson Red, Passive=Emerald Green, Players=Cyan, Neutral=Amber Gold
+				float r = 1.0f, g = 0.80f, b = 0.15f; // Default Amber Gold (Neutral)
+				if (e instanceof IMob) {
+					// Hostile (covers zombies, skeletons, creepers, spiders, slimes, ghasts, etc.)
+					r = 0.96f;
+					g = 0.22f;
+					b = 0.22f;
+				} else if (e instanceof EntityAnimal || e instanceof EntityVillager) {
+					// Passive animals and villagers
+					r = 0.22f;
+					g = 0.90f;
+					b = 0.35f;
+				} else if (e instanceof EntityPlayer) {
+					// Other players
+					r = 0.25f;
+					g = 0.75f;
+					b = 1.0f;
 				}
 
 				drawEntityArrow(px, pz, interpEyaw, r, g, b);
 			}
 		}
+
+		GL11.glLineWidth(1.0f);
+		GL11.glEnable(GL11.GL_CULL_FACE);
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 	}
 
 	private void drawEntityArrow(double x, double y, float yaw, float r, float g, float b) {
 		Tessellator t = Tessellator.instance;
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		GL11.glDisable(GL11.GL_CULL_FACE);
 
 		double angle = Math.toRadians(yaw + 90);
-		double sz = 3.0;
+		double sz = 4.2;
 
-		// Simple pointed triangle: tip + two wing points
+		// Sleek directional chevron
 		double tipX = x + Math.cos(angle) * sz;
 		double tipY = y + Math.sin(angle) * sz;
-		double wingLX = x + Math.cos(angle + Math.PI * 0.75) * sz;
-		double wingLY = y + Math.sin(angle + Math.PI * 0.75) * sz;
-		double wingRX = x + Math.cos(angle - Math.PI * 0.75) * sz;
-		double wingRY = y + Math.sin(angle - Math.PI * 0.75) * sz;
+		double wingLX = x + Math.cos(angle + Math.PI * 0.80) * (sz * 0.70);
+		double wingLY = y + Math.sin(angle + Math.PI * 0.80) * (sz * 0.70);
+		double wingRX = x + Math.cos(angle - Math.PI * 0.80) * (sz * 0.70);
+		double wingRY = y + Math.sin(angle - Math.PI * 0.80) * (sz * 0.70);
+		double tailX = x + Math.cos(angle + Math.PI) * (sz * 0.22);
+		double tailY = y + Math.sin(angle + Math.PI) * (sz * 0.22);
 
-		// 1. Black outline (slightly larger)
-		GL11.glLineWidth(2.0f);
+		// 1. Subtle drop shadow for depth
+		t.startDrawing(GL11.GL_TRIANGLE_FAN);
+		t.setColorRGBA(0, 0, 0, 95);
+		t.addVertex(tipX + 0.6, tipY + 0.6, 0.0);
+		t.addVertex(wingLX + 0.6, wingLY + 0.6, 0.0);
+		t.addVertex(tailX + 0.6, tailY + 0.6, 0.0);
+		t.addVertex(wingRX + 0.6, wingRY + 0.6, 0.0);
+		t.draw();
+
+		// 2. High-contrast dark outline
+		GL11.glLineWidth(1.6f);
 		t.startDrawing(GL11.GL_LINE_LOOP);
-		t.setColorOpaque_F(0.0f, 0.0f, 0.0f);
+		t.setColorOpaque_F(0.04f, 0.04f, 0.04f);
 		t.addVertex(tipX, tipY, 0.0);
 		t.addVertex(wingLX, wingLY, 0.0);
+		t.addVertex(tailX, tailY, 0.0);
 		t.addVertex(wingRX, wingRY, 0.0);
 		t.draw();
 
-		// 2. Solid colored fill
+		// 3. Faceted 3D chevron fill (Left wing bright highlight, right wing slight shade)
+		float hlR = Math.min(1.0f, r * 1.15f);
+		float hlG = Math.min(1.0f, g * 1.15f);
+		float hlB = Math.min(1.0f, b * 1.15f);
+
+		float shR = r * 0.85f;
+		float shG = g * 0.85f;
+		float shB = b * 0.85f;
+
 		t.startDrawing(GL11.GL_TRIANGLES);
-		t.setColorOpaque_F(r, g, b);
+		// Left facet
+		t.setColorOpaque_F(hlR, hlG, hlB);
 		t.addVertex(tipX, tipY, 0.0);
 		t.addVertex(wingLX, wingLY, 0.0);
+		t.addVertex(tailX, tailY, 0.0);
+		// Right facet
+		t.setColorOpaque_F(shR, shG, shB);
+		t.addVertex(tipX, tipY, 0.0);
+		t.addVertex(tailX, tailY, 0.0);
 		t.addVertex(wingRX, wingRY, 0.0);
 		t.draw();
-
-		GL11.glLineWidth(1.0f);
-		GL11.glEnable(GL11.GL_CULL_FACE);
 	}
 
 	private void drawPlayerArrow(int centerX, int centerY, float yaw) {

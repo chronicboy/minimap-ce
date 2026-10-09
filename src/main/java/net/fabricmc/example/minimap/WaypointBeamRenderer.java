@@ -1,5 +1,6 @@
 package net.fabricmc.example.minimap;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.src.*;
 import org.lwjgl.opengl.GL11;
 
@@ -8,6 +9,8 @@ import java.util.List;
 public class WaypointBeamRenderer {
     private static final float DOT_THRESHOLD = 0.966f; // cos(15°)
     private static final float DIST_CUTOFF = 10.0f;
+
+    private static final boolean IS_BETTER_GAME_SETTING_LOADED = FabricLoader.getInstance().isModLoaded("better_game_setting");
 
     public static void renderAll(float partialTicks) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -19,6 +22,29 @@ public class WaypointBeamRenderer {
         double camX = RenderManager.renderPosX;
         double camY = RenderManager.renderPosY;
         double camZ = RenderManager.renderPosZ;
+
+        // Hoist maxRender calculation once per frame
+        double maxRender = 500.0;
+        try {
+            float farPlane = 256 >> mc.gameSettings.renderDistance;
+            if (IS_BETTER_GAME_SETTING_LOADED) {
+                farPlane = 32 * (float) Math.pow(2, (mc.gameSettings.renderDistance - 2) / 10.0);
+            }
+            farPlane = Math.max(32.0f, farPlane);
+            maxRender = Math.min(500.0, farPlane * 0.95);
+        } catch (Exception e) {}
+
+        // Precompute viewer look vector once per frame (eliminates per-waypoint trigonometry)
+        Entity viewer = mc.renderViewEntity;
+        double lookX = 0, lookY = 0, lookZ = 1.0;
+        if (viewer != null) {
+            float yawRad = (float) Math.toRadians(viewer.rotationYaw);
+            float pitchRad = (float) Math.toRadians(viewer.rotationPitch);
+            double cosPitch = Math.cos(pitchRad);
+            lookX = -Math.sin(yawRad) * cosPitch;
+            lookY = -Math.sin(pitchRad);
+            lookZ = Math.cos(yawRad) * cosPitch;
+        }
 
         GL11.glPushMatrix();
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
@@ -37,20 +63,21 @@ public class WaypointBeamRenderer {
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glDepthMask(false);
 
-        renderPass(mc, camX, camY, camZ, true);
+        renderPass(mc, camX, camY, camZ, maxRender, lookX, lookY, lookZ, true);
 
         // ---- Pass 2: Labels (Texture ON, Depth Test OFF) ----
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         // Depth mask still false
 
-        renderPass(mc, camX, camY, camZ, false);
+        renderPass(mc, camX, camY, camZ, maxRender, lookX, lookY, lookZ, false);
 
         GL11.glPopAttrib();
         GL11.glPopMatrix();
     }
 
-    private static void renderPass(Minecraft mc, double camX, double camY, double camZ, boolean minimal) {
+    private static void renderPass(Minecraft mc, double camX, double camY, double camZ,
+            double maxRender, double lookX, double lookY, double lookZ, boolean minimal) {
         if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
             int dim = mc.theWorld.provider.dimensionId;
             int sx, sy, sz;
@@ -67,19 +94,19 @@ public class WaypointBeamRenderer {
                 sz = SpawnTracker.instance.getSpawnZ();
                 sy = SpawnTracker.instance.getSpawnY();
             }
-            renderWaypoint(mc, "Spawn", sx, sy, sz, 0x5599FF, camX, camY, camZ, minimal);
+            renderWaypoint(mc, "Spawn", sx, sy, sz, 0x5599FF, camX, camY, camZ, maxRender, lookX, lookY, lookZ, minimal);
         }
 
         List<Waypoint> waypoints = WaypointManager.instance.getWaypoints();
         for (Waypoint wp : waypoints) {
             if (!wp.enabled)
                 continue;
-            renderWaypoint(mc, wp.name, wp.x, wp.y, wp.z, wp.color, camX, camY, camZ, minimal);
+            renderWaypoint(mc, wp.name, wp.x, wp.y, wp.z, wp.color, camX, camY, camZ, maxRender, lookX, lookY, lookZ, minimal);
         }
     }
 
     private static void renderWaypoint(Minecraft mc, String name, int wx, int wy, int wz, int color,
-            double camX, double camY, double camZ, boolean minimal) {
+            double camX, double camY, double camZ, double maxRender, double lookX, double lookY, double lookZ, boolean minimal) {
         double dx = wx + 0.5 - camX;
         double dy = wy + 0.5 - camY;
         double dz = wz + 0.5 - camZ;
@@ -89,25 +116,13 @@ public class WaypointBeamRenderer {
             return;
 
         double dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        boolean focused = isFocused(dx, dy, dz, dist3D, mc);
+        boolean focused = isFocused(dx, dy, dz, dist3D, lookX, lookY, lookZ);
 
         // Project beam to render distance boundary if too far
         // This ensures beams are always visible even beyond MC's render distance
         double renderDx = dx;
         double renderDy = dy;
         double renderDz = dz;
-
-        // Use the actual clipping distance from the renderer, but stay within GL clip range
-        // Note: 0.95 factor ensures it's clearly inside the clipping plane
-        double maxRender = 500.0; 
-        
-        try {
-            // Shadow access to farPlaneDistance would be better, but we can safely 
-            // calculate it from renderDistance setting if field access is complex.
-            // Short = 32, Tiny = 16, etc.
-            float farPlane = 256 >> mc.gameSettings.renderDistance;
-            maxRender = Math.min(500.0, farPlane * 0.95);
-        } catch (Exception e) {}
 
         if (distH > maxRender) {
             double ratio = maxRender / distH;
@@ -131,20 +146,14 @@ public class WaypointBeamRenderer {
         }
     }
 
-    private static boolean isFocused(double dx, double dy, double dz, double dist, Minecraft mc) {
+    private static boolean isFocused(double dx, double dy, double dz, double dist,
+            double lookX, double lookY, double lookZ) {
         if (dist < 0.1)
             return true;
 
         dx /= dist;
         dy /= dist;
         dz /= dist;
-
-        Entity viewer = mc.renderViewEntity;
-        float yawRad = (float) Math.toRadians(viewer.rotationYaw);
-        float pitchRad = (float) Math.toRadians(viewer.rotationPitch);
-        double lookX = -Math.sin(yawRad) * Math.cos(pitchRad);
-        double lookY = -Math.sin(pitchRad);
-        double lookZ = Math.cos(yawRad) * Math.cos(pitchRad);
 
         double dot = dx * lookX + dy * lookY + dz * lookZ;
         return dot > DOT_THRESHOLD;
