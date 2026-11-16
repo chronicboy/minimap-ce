@@ -4,33 +4,49 @@ import net.fabricmc.example.minimap.GuiFullscreenMap;
 import net.fabricmc.example.minimap.GuiMapSettings;
 import net.fabricmc.example.minimap.GuiWaypoints;
 import net.fabricmc.example.minimap.MapConfig;
-import net.fabricmc.example.minimap.MapTileManager;
 import net.fabricmc.example.minimap.SpawnTracker;
+import net.fabricmc.example.minimap.Waypoint;
 import net.fabricmc.example.minimap.WaypointManager;
-import net.minecraft.src.*;
+import net.fabricmc.example.minimap.engine.MapEngine;
+import net.minecraft.src.GuiGameOver;
+import net.minecraft.src.Minecraft;
+import net.minecraft.src.World;
 import org.lwjgl.input.Keyboard;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Minecraft.class)
 public class MinecraftMixin {
-	private static boolean wasPlusPressed = false;
-	private static boolean wasMinusPressed = false;
-	private static boolean wasIncreaseSizePressed = false;
-	private static boolean wasDecreaseSizePressed = false;
-	private static boolean wasCoordinatesKeyPressed = false;
-	private static boolean wasWaypointKeyPressed = false;
-	private static boolean wasFullscreenMapKeyPressed = false;
-	private static boolean wasSettingsKeyPressed = false;
+	@Unique
+	private static boolean wasNumpadPlusDown = false;
+	@Unique
+	private static boolean wasNumpadMinusDown = false;
+	@Unique
 	private static String lastWorldId = "";
+	@Unique
 	private static World lastWorldInstance = null;
+	@Unique
 	private static boolean wasDead = false;
+	@Unique
+	private static boolean engineErrorLogged = false;
 
 	@Inject(at = @At("HEAD"), method = "runTick")
 	private void onTick(CallbackInfo ci) {
 		Minecraft mc = (Minecraft) (Object) this;
+
+		// Map upkeep: world tracking, chunk sampling, background saving.
+		try {
+			MapEngine.INSTANCE.tick(mc);
+		} catch (Throwable t) {
+			if (!engineErrorLogged) {
+				engineErrorLogged = true;
+				System.err.println("[Minimap CE] Map engine tick failed:");
+				t.printStackTrace();
+			}
+		}
 
 		if (mc.theWorld != null && mc.thePlayer != null) {
 			// Detect world changes and reload waypoints
@@ -40,154 +56,136 @@ public class MinecraftMixin {
 				if (!currentWorldId.equals(lastWorldId)) {
 					lastWorldId = currentWorldId;
 					WaypointManager.instance.loadForWorld(mc.theWorld);
-					MapTileManager.instance.loadForWorld(mc.theWorld);
 					SpawnTracker.instance.onWorldLoad(mc);
 				}
 			}
 
-			// Auto-save map tiles periodically
-			MapTileManager.instance.tickAutoSave();
-
 			if (mc.currentScreen instanceof GuiGameOver && !wasDead) {
 				wasDead = true;
-				int maxDeath = 0;
-				for (net.fabricmc.example.minimap.Waypoint w : WaypointManager.instance.getWaypoints()) {
-					if (w.name.startsWith("Death")) {
-						if (w.name.equals("Death")) {
-							maxDeath = Math.max(maxDeath, 1);
-						} else if (w.name.startsWith("Death ")) {
-							try {
-								maxDeath = Math.max(maxDeath, Integer.parseInt(w.name.substring(6)));
-							} catch (NumberFormatException ignored) {
-							}
-						}
-					}
-				}
-				String name = maxDeath == 0 ? "Death" : "Death " + (maxDeath + 1);
-
-				int px = (int) Math.floor(mc.thePlayer.posX);
-				int py = (int) mc.thePlayer.posY;
-				int pz = (int) Math.floor(mc.thePlayer.posZ);
-				boolean exists = false;
-				for (net.fabricmc.example.minimap.Waypoint w : WaypointManager.instance.getWaypoints()) {
-					if (w.x == px && w.y == py && w.z == pz && w.name.startsWith("Death")) {
-						exists = true;
-						break;
-					}
-				}
-				if (!exists) {
-					net.fabricmc.example.minimap.Waypoint wp = new net.fabricmc.example.minimap.Waypoint(name, px, py,
-							pz, 0xFF0000);
-					WaypointManager.instance.addWaypoint(wp);
-					WaypointManager.instance.save();
-				}
+				addDeathWaypoint(mc);
 			} else if (!(mc.currentScreen instanceof GuiGameOver) && wasDead) {
 				wasDead = false;
 			}
 
 			if (mc.currentScreen == null) {
-				// Zoom controls
-				if (Keyboard.isKeyDown(Keyboard.KEY_EQUALS) || Keyboard.isKeyDown(Keyboard.KEY_ADD)) {
-					if (!wasPlusPressed) {
-						wasPlusPressed = true;
-						MapConfig.instance.zoomLevel = Math.max(
-								MapConfig.instance.zoomLevel - 1, -1);
-						MapConfig.instance.saveConfig();
-					}
-				} else {
-					wasPlusPressed = false;
-				}
-
-				if (Keyboard.isKeyDown(Keyboard.KEY_MINUS) || Keyboard.isKeyDown(Keyboard.KEY_SUBTRACT)) {
-					if (!wasMinusPressed) {
-						wasMinusPressed = true;
-						MapConfig.instance.zoomLevel = Math.min(
-								MapConfig.instance.zoomLevel + 1, 1);
-						MapConfig.instance.saveConfig();
-					}
-				} else {
-					wasMinusPressed = false;
-				}
-
-				// Size adjustment
-				if (MapConfig.increaseSizeKey.isPressed()) {
-					if (!wasIncreaseSizePressed) {
-						wasIncreaseSizePressed = true;
-						MapConfig.instance.minimapSize = Math.min(
-								MapConfig.instance.minimapSize + 16, 256);
-						MapConfig.instance.saveConfig();
-					}
-				} else {
-					wasIncreaseSizePressed = false;
-				}
-
-				if (MapConfig.decreaseSizeKey.isPressed()) {
-					if (!wasDecreaseSizePressed) {
-						wasDecreaseSizePressed = true;
-						MapConfig.instance.minimapSize = Math.max(
-								MapConfig.instance.minimapSize - 16, 32);
-						MapConfig.instance.saveConfig();
-					}
-				} else {
-					wasDecreaseSizePressed = false;
-				}
-
-				// Toggle entities (F key)
-				if (MapConfig.toggleEntitiesKey.isPressed()) {
-					if (!wasCoordinatesKeyPressed) {
-						wasCoordinatesKeyPressed = true;
-						MapConfig.instance.showEntities = !MapConfig.instance.showEntities;
-						MapConfig.instance.saveConfig();
-					}
-				} else {
-					wasCoordinatesKeyPressed = false;
-				}
-
-				// Waypoint GUI
-				if (MapConfig.waypointGuiKey.isPressed()) {
-					if (!wasWaypointKeyPressed) {
-						wasWaypointKeyPressed = true;
-						mc.displayGuiScreen(new GuiWaypoints());
-					}
-				} else {
-					wasWaypointKeyPressed = false;
-				}
-
-				// Fullscreen Map (J key)
-				if (MapConfig.fullscreenMapKey.isPressed()) {
-					if (!wasFullscreenMapKeyPressed) {
-						wasFullscreenMapKeyPressed = true;
-						mc.displayGuiScreen(new GuiFullscreenMap());
-					}
-				} else {
-					wasFullscreenMapKeyPressed = false;
-				}
-
-				// Map Settings (O key)
-				if (MapConfig.settingsKey.isPressed()) {
-					if (!wasSettingsKeyPressed) {
-						wasSettingsKeyPressed = true;
-						mc.displayGuiScreen(new GuiMapSettings(null));
-					}
-				} else {
-					wasSettingsKeyPressed = false;
-				}
+				handleKeys(mc);
 			}
 		} else {
-			// Player left the world — save and clear waypoints
+			// Player left the world: save and clear waypoints
 			if (!lastWorldId.isEmpty()) {
 				WaypointManager.instance.clearForWorldLeave();
-				MapTileManager.instance.clearForWorldLeave();
 				SpawnTracker.instance.onWorldLeave();
 				lastWorldId = "";
 			}
+			lastWorldInstance = null;
+		}
+	}
+
+	@Unique
+	private static void addDeathWaypoint(Minecraft mc) {
+		int maxDeath = 0;
+		for (Waypoint w : WaypointManager.instance.getWaypoints()) {
+			if (w.name == null)
+				continue;
+			if (w.name.equals("Death")) {
+				maxDeath = Math.max(maxDeath, 1);
+			} else if (w.name.startsWith("Death ")) {
+				try {
+					maxDeath = Math.max(maxDeath, Integer.parseInt(w.name.substring(6).trim()));
+				} catch (NumberFormatException ignored) {
+				}
+			}
+		}
+		String name = maxDeath == 0 ? "Death" : "Death " + (maxDeath + 1);
+
+		int px = (int) Math.floor(mc.thePlayer.posX);
+		int py = (int) Math.floor(mc.thePlayer.boundingBox.minY);
+		int pz = (int) Math.floor(mc.thePlayer.posZ);
+		for (Waypoint w : WaypointManager.instance.getWaypoints()) {
+			if (w.x == px && w.y == py && w.z == pz && w.name != null && w.name.startsWith("Death"))
+				return; // already recorded
+		}
+		WaypointManager.instance.addWaypoint(new Waypoint(name, px, py, pz, 0xFF0000));
+	}
+
+	@Unique
+	private static void handleKeys(Minecraft mc) {
+		MapConfig cfg = MapConfig.instance;
+		boolean changed = false;
+
+		// Zoom: the rebindable keys, plus numpad +/- as before.
+		while (MapConfig.zoomInKey.isPressed()) {
+			cfg.zoomMinimap(-1);
+			changed = true;
+		}
+		while (MapConfig.zoomOutKey.isPressed()) {
+			cfg.zoomMinimap(1);
+			changed = true;
+		}
+		boolean plus = Keyboard.isKeyDown(Keyboard.KEY_ADD);
+		if (plus && !wasNumpadPlusDown) {
+			cfg.zoomMinimap(-1);
+			changed = true;
+		}
+		wasNumpadPlusDown = plus;
+		boolean minus = Keyboard.isKeyDown(Keyboard.KEY_SUBTRACT);
+		if (minus && !wasNumpadMinusDown) {
+			cfg.zoomMinimap(1);
+			changed = true;
+		}
+		wasNumpadMinusDown = minus;
+
+		while (MapConfig.increaseSizeKey.isPressed()) {
+			cfg.minimapSize = Math.min(cfg.minimapSize + 16, MapConfig.MAX_SIZE);
+			changed = true;
+		}
+		while (MapConfig.decreaseSizeKey.isPressed()) {
+			cfg.minimapSize = Math.max(cfg.minimapSize - 16, MapConfig.MIN_SIZE);
+			changed = true;
+		}
+		while (MapConfig.toggleEntitiesKey.isPressed()) {
+			cfg.showEntities = !cfg.showEntities;
+			changed = true;
+		}
+		while (MapConfig.toggleMinimapKey.isPressed()) {
+			cfg.minimapEnabled = !cfg.minimapEnabled;
+			changed = true;
+		}
+		if (changed)
+			cfg.saveConfig();
+
+		// Screens. Opening one releases all keys, so at most one of these fires per tick.
+		if (MapConfig.waypointGuiKey.isPressed()) {
+			mc.displayGuiScreen(new GuiWaypoints());
+		} else if (MapConfig.fullscreenMapKey.isPressed()) {
+			mc.displayGuiScreen(new GuiFullscreenMap());
+		} else if (MapConfig.settingsKey.isPressed()) {
+			mc.displayGuiScreen(new GuiMapSettings(null));
+		} else if (MapConfig.quickWaypointKey.isPressed()) {
+			GuiWaypoints.openNewWaypointAtPlayer(mc, null, null, mc.theWorld.provider.dimensionId);
 		}
 	}
 
 	@Inject(at = @At("HEAD"), method = "shutdown")
 	private void onShutdown(CallbackInfo ci) {
-		MapConfig.instance.saveConfig();
-		WaypointManager.instance.save();
-		MapTileManager.instance.saveAll();
+		try {
+			MapConfig.instance.saveConfig();
+			WaypointManager.instance.save();
+		} catch (Throwable ignored) {
+		}
+	}
+
+	/** Runs once on every exit path, before the world is torn down. */
+	@Inject(at = @At("HEAD"), method = "shutdownMinecraftApplet")
+	private void onShutdownApplet(CallbackInfo ci) {
+		try {
+			WaypointManager.instance.save();
+		} catch (Throwable ignored) {
+		}
+		try {
+			MapEngine.INSTANCE.shutdown();
+		} catch (Throwable t) {
+			System.err.println("[Minimap CE] Could not save the map on exit: " + t);
+		}
 	}
 }

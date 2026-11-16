@@ -1,101 +1,124 @@
 package net.fabricmc.example.minimap;
 
-import net.minecraft.src.*;
+import net.fabricmc.example.minimap.engine.MapDraw;
+import net.fabricmc.example.minimap.engine.MapEngine;
+import net.fabricmc.example.minimap.engine.MapStorage;
+import net.minecraft.src.EntityPlayer;
+import net.minecraft.src.FontRenderer;
+import net.minecraft.src.GuiButton;
+import net.minecraft.src.GuiScreen;
+import net.minecraft.src.Minecraft;
+import net.minecraft.src.ScaledResolution;
+import net.minecraft.src.Tessellator;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
-import java.nio.IntBuffer;
+import java.util.ArrayList;
 import java.util.List;
 
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL12;
-
 /**
- * JourneyMap-style fullscreen map GUI.
- * Features: pan by dragging, scroll-wheel zoom, waypoints, entities,
- * coordinates, compass.
+ * Fullscreen world map.
+ *
+ * Drag to pan, mouse wheel to zoom towards the cursor, WASD/arrow keys to pan,
+ * C to follow the player again, double-click to drop a waypoint, right-click
+ * for a context menu. Terrain is drawn from GPU region textures, so panning and
+ * zooming never re-sample anything.
  */
 public class GuiFullscreenMap extends GuiScreen {
-	// View state
-	private double viewCenterX;
-	private double viewCenterZ;
-	private boolean initialized = false;
-
-	// Texture state
-	private int mapTextureId = -1;
-	private IntBuffer mapBuffer = null;
-	private int[] mapPixels = null;
-
-	// Drag state
-	private boolean dragging = false;
-	private int dragStartX, dragStartY;
-	private double dragStartCenterX, dragStartCenterZ;
-
-	// Double click state
-	private long lastClickTime = 0;
-	private int lastClickX = 0;
-	private int lastClickY = 0;
-
-	// Cache
-	private int[] mapColorCache;
-	private int[] mapHeightCache;
-	private int cacheW, cacheH;
-	private double cachedCenterX = Double.MIN_VALUE;
-	private double cachedCenterZ = Double.MIN_VALUE;
-	private int cachedZoom = Integer.MIN_VALUE;
-	private int cachedViewDim = Integer.MIN_VALUE;
-
-	// Cross-dimension viewing
-	private int viewDimension = Integer.MIN_VALUE; // current player dimension by default
-	private java.util.HashMap<Long, int[]> crossDimTiles = null;
-	private java.util.List<Waypoint> crossDimWaypoints = null;
-
-	// Layout
 	private static final int TOP_BAR_HEIGHT = 26;
 	private static final int BOTTOM_BAR_HEIGHT = 18;
+	private static final String[] DIM_NAMES = { "Overworld", "Nether", "End" };
+	private static final int[] DIM_IDS = { 0, -1, 1 };
+	private static final int TAB_GAP = 16;
+	private static final double PAN_SPEED = 480.0; // GUI pixels per second
+	private static final int HOVER_RADIUS = 8;
+
+	private static final int ACTION_NEW_WAYPOINT = 0;
+	private static final int ACTION_TELEPORT_HERE = 1;
+	private static final int ACTION_CENTER = 2;
+	private static final int ACTION_EDIT = 3;
+	private static final int ACTION_DELETE = 4;
+	private static final int ACTION_TELEPORT_WAYPOINT = 5;
+	private static final int ACTION_TOGGLE = 6;
+
+	// View
+	private double centerX, centerZ;
+	private double scale, targetScale;
+	private boolean initialized;
+	private boolean follow = true;
+	private boolean zoomAnchored;
+	private double anchorWorldX, anchorWorldZ, anchorScreenX, anchorScreenY;
+	private long lastFrameNanos;
+	private int guiScale = 1;
+
+	// Dragging
+	private boolean dragging;
+	private boolean dragMoved;
+	private double dragStartMouseX, dragStartMouseY, dragStartCenterX, dragStartCenterZ;
+
+	// Double click
+	private long lastClickTime;
+	private int lastClickX, lastClickY;
+
+	// Dimension being viewed
+	private int viewDimension = Integer.MIN_VALUE;
+	private int playerDimension = Integer.MIN_VALUE;
+	private MapStorage auxStorage;
+	private List<Waypoint> crossDimWaypoints;
+
+	// Context menu
+	private boolean menuOpen;
+	private int menuX, menuY, menuW;
+	private int menuWorldX, menuWorldZ;
+	private Waypoint menuWaypoint;
+	private final List<String> menuLabels = new ArrayList<String>();
+	private final List<Integer> menuActions = new ArrayList<Integer>();
+
+	private final double[] rectX = new double[4];
+	private final double[] rectY = new double[4];
 
 	@SuppressWarnings("unchecked")
 	@Override
 	public void initGui() {
-		Keyboard.enableRepeatEvents(true);
-
 		Minecraft mc = Minecraft.getMinecraft();
+		guiScale = Math.max(1, new ScaledResolution(mc.gameSettings, mc.displayWidth, mc.displayHeight).getScaleFactor());
+
 		if (!initialized && mc.thePlayer != null) {
-			viewCenterX = mc.thePlayer.posX;
-			viewCenterZ = mc.thePlayer.posZ;
+			centerX = mc.thePlayer.posX;
+			centerZ = mc.thePlayer.posZ;
+			scale = targetScale = MapConfig.instance.fullscreenScale;
 			initialized = true;
 		}
-		if (viewDimension == Integer.MIN_VALUE && mc.theWorld != null) {
-			viewDimension = mc.theWorld.provider.dimensionId;
+		if (mc.theWorld != null) {
+			int dim = mc.theWorld.provider.dimensionId;
+			if (viewDimension == Integer.MIN_VALUE)
+				viewDimension = dim;
+			if (playerDimension == Integer.MIN_VALUE)
+				playerDimension = dim;
 		}
 
-		// Top bar buttons
-		int btnW = 80;
-		int btnH = 20;
-		int gap = 4;
-		int startX = gap;
-		int btnY = 3;
-
-		this.buttonList.add(new GuiButton(0, startX, btnY, btnW, btnH, "Waypoints"));
-		this.buttonList.add(new GuiButton(1, startX + btnW + gap, btnY, btnW, btnH, "Settings"));
-
-		// Close button on the right
+		int btnW = 80, btnH = 20, gap = 4, btnY = 3;
+		this.buttonList.add(new GuiButton(0, gap, btnY, btnW, btnH, "Waypoints"));
+		this.buttonList.add(new GuiButton(1, gap + btnW + gap, btnY, btnW, btnH, "Settings"));
 		this.buttonList.add(new GuiButton(2, this.width - btnW - gap, btnY, btnW, btnH, "Close"));
 
-		invalidateCache();
+		dragging = false;
+		menuOpen = false;
+		lastFrameNanos = 0;
 	}
 
 	@Override
 	public void onGuiClosed() {
-		Keyboard.enableRepeatEvents(false);
-		// Save the fullscreen zoom level
+		MapConfig.instance.fullscreenScale = targetScale > 0 ? targetScale : 1.0;
 		MapConfig.instance.saveConfig();
+		closeAuxStorage();
+	}
 
-		// Clean up texture
-		if (mapTextureId != -1) {
-			GL11.glDeleteTextures(mapTextureId);
-			mapTextureId = -1;
+	private void closeAuxStorage() {
+		if (auxStorage != null) {
+			auxStorage.close();
+			auxStorage = null;
 		}
 	}
 
@@ -104,32 +127,181 @@ public class GuiFullscreenMap extends GuiScreen {
 		if (!button.enabled)
 			return;
 		switch (button.id) {
-			case 0: // Waypoints
-				this.mc.displayGuiScreen(new GuiWaypoints());
+			case 0:
+				this.mc.displayGuiScreen(new GuiWaypoints(this));
 				break;
-			case 1: // Settings
+			case 1:
 				this.mc.displayGuiScreen(new GuiMapSettings(this));
 				break;
-			case 2: // Close
+			case 2:
 				this.mc.displayGuiScreen(null);
 				break;
 		}
 	}
 
+	// ------------------------------------------------------------------- state
+
+	private boolean viewingPlayerDimension() {
+		return viewDimension == playerDimension;
+	}
+
+	private MapStorage storage() {
+		if (viewingPlayerDimension())
+			return MapEngine.INSTANCE.storage();
+		if (auxStorage == null)
+			auxStorage = MapEngine.INSTANCE.openDimension(viewDimension);
+		return auxStorage;
+	}
+
+	private List<Waypoint> waypoints() {
+		return crossDimWaypoints != null ? crossDimWaypoints : WaypointManager.instance.getWaypoints();
+	}
+
+	private void saveWaypoints() {
+		if (crossDimWaypoints != null)
+			WaypointManager.instance.saveWaypointsForDim(viewDimension, crossDimWaypoints);
+		else
+			WaypointManager.instance.save();
+	}
+
 	private void switchDimension(int dim) {
 		if (dim == viewDimension)
 			return;
+		closeAuxStorage();
+		menuOpen = false;
+		zoomAnchored = false;
+
+		// Keep looking at the equivalent place when hopping between Overworld and Nether.
+		if (viewDimension == 0 && dim == -1) {
+			centerX /= 8.0;
+			centerZ /= 8.0;
+		} else if (viewDimension == -1 && dim == 0) {
+			centerX *= 8.0;
+			centerZ *= 8.0;
+		}
+
 		viewDimension = dim;
-		invalidateCache();
-		int currentDim = mc.theWorld != null ? mc.theWorld.provider.dimensionId : 0;
-		if (dim != currentDim) {
-			crossDimTiles = MapTileManager.instance.loadTilesForDim(dim);
+		if (dim != playerDimension) {
 			crossDimWaypoints = WaypointManager.instance.loadWaypointsForDim(dim);
+			follow = false;
 		} else {
-			crossDimTiles = null;
 			crossDimWaypoints = null;
 		}
 	}
+
+	private int spawnX() {
+		if (viewDimension == 1)
+			return 100;
+		return viewDimension == -1 ? SpawnTracker.instance.getNetherSpawnX() : SpawnTracker.instance.getSpawnX();
+	}
+
+	private int spawnZ() {
+		if (viewDimension == 1)
+			return 0;
+		return viewDimension == -1 ? SpawnTracker.instance.getNetherSpawnZ() : SpawnTracker.instance.getSpawnZ();
+	}
+
+	private int mapHeight() {
+		return this.height - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT;
+	}
+
+	private double midX() {
+		return this.width / 2.0;
+	}
+
+	private double midY() {
+		return TOP_BAR_HEIGHT + mapHeight() / 2.0;
+	}
+
+	private boolean inMapArea(double x, double y) {
+		return y >= TOP_BAR_HEIGHT && y < this.height - BOTTOM_BAR_HEIGHT && x >= 0 && x < this.width;
+	}
+
+	private double toWorldX(double screenX) {
+		return centerX + (screenX - midX()) / scale;
+	}
+
+	private double toWorldZ(double screenY) {
+		return centerZ + (screenY - midY()) / scale;
+	}
+
+	private double toScreenX(double worldX) {
+		return midX() + (worldX - centerX) * scale;
+	}
+
+	private double toScreenY(double worldZ) {
+		return midY() + (worldZ - centerZ) * scale;
+	}
+
+	/** Advances pan/zoom animation by the real time since the last frame. */
+	private void updateView(double mouseX, double mouseY, EntityPlayer player, float partialTicks) {
+		long nowNanos = System.nanoTime();
+		double dt = lastFrameNanos == 0 ? 0.0 : Math.min(0.1, (nowNanos - lastFrameNanos) / 1.0e9);
+		lastFrameNanos = nowNanos;
+
+		if (!menuOpen) {
+			double pan = PAN_SPEED * dt / scale;
+			double dx = 0, dz = 0;
+			if (Keyboard.isKeyDown(Keyboard.KEY_LEFT) || Keyboard.isKeyDown(Keyboard.KEY_A))
+				dx -= pan;
+			if (Keyboard.isKeyDown(Keyboard.KEY_RIGHT) || Keyboard.isKeyDown(Keyboard.KEY_D))
+				dx += pan;
+			if (Keyboard.isKeyDown(Keyboard.KEY_UP) || Keyboard.isKeyDown(Keyboard.KEY_W))
+				dz -= pan;
+			if (Keyboard.isKeyDown(Keyboard.KEY_DOWN) || Keyboard.isKeyDown(Keyboard.KEY_S))
+				dz += pan;
+			if (dx != 0 || dz != 0) {
+				centerX += dx;
+				centerZ += dz;
+				follow = false;
+				zoomAnchored = false;
+			}
+		}
+
+		if (dragging) {
+			if (!Mouse.isButtonDown(0)) {
+				dragging = false;
+			} else {
+				double ddx = mouseX - dragStartMouseX, ddy = mouseY - dragStartMouseY;
+				if (!dragMoved && (Math.abs(ddx) > 2.0 || Math.abs(ddy) > 2.0))
+					dragMoved = true;
+				if (dragMoved) {
+					centerX = dragStartCenterX - ddx / scale;
+					centerZ = dragStartCenterZ - ddy / scale;
+					follow = false;
+					zoomAnchored = false;
+				}
+			}
+		}
+
+		if (scale != targetScale) {
+			double ratio = targetScale / scale;
+			double next;
+			if (dt <= 0.0)
+				next = scale; // first frame: nothing to animate yet
+			else if (Math.abs(Math.log(ratio)) < 0.004)
+				next = targetScale;
+			else
+				next = scale * Math.pow(ratio, 1.0 - Math.exp(-dt * 18.0));
+			if (zoomAnchored && !follow) {
+				centerX = anchorWorldX - (anchorScreenX - midX()) / next;
+				centerZ = anchorWorldZ - (anchorScreenY - midY()) / next;
+			}
+			if (dragging) {
+				// Keep the grabbed point under the cursor while zooming mid-drag.
+				dragStartCenterX = centerX + (mouseX - dragStartMouseX) / next;
+				dragStartCenterZ = centerZ + (mouseY - dragStartMouseY) / next;
+			}
+			scale = next;
+		}
+
+		if (follow && viewingPlayerDimension()) {
+			centerX = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
+			centerZ = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
+		}
+	}
+
+	// -------------------------------------------------------------------- draw
 
 	@Override
 	public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -138,696 +310,567 @@ public class GuiFullscreenMap extends GuiScreen {
 			this.mc.displayGuiScreen(null);
 			return;
 		}
-
-		World world = mc.theWorld;
 		EntityPlayer player = mc.thePlayer;
 
-		// Lazy-init texture sampling
-		if (!TextureColorSampler.isInitialized()) {
-			TextureColorSampler.init();
+		// The player changed dimension while the map was open: snap back to where they are.
+		int dimNow = mc.theWorld.provider.dimensionId;
+		if (dimNow != playerDimension) {
+			playerDimension = dimNow;
+			closeAuxStorage();
+			viewDimension = dimNow;
+			crossDimWaypoints = null;
+			follow = true;
+			menuOpen = false;
 		}
 
-		double zoomFactor = Math.pow(2.0, -MapConfig.instance.fullscreenZoom);
+		// Sub-pixel mouse position, so dragging is as smooth as the display allows.
+		double mx = Mouse.getX() * (double) this.width / mc.displayWidth;
+		double my = this.height - Mouse.getY() * (double) this.height / mc.displayHeight;
+
+		updateView(mx, my, player, partialTicks);
+
+		MapStorage storage = storage();
+		if (storage != null) {
+			storage.beginFrame();
+			if (storage == auxStorage)
+				storage.tick();
+		}
 
 		int mapTop = TOP_BAR_HEIGHT;
 		int mapBottom = this.height - BOTTOM_BAR_HEIGHT;
-		int mapLeft = 0;
-		int mapRight = this.width;
-		int mapW = mapRight - mapLeft;
 		int mapH = mapBottom - mapTop;
+		double midX = midX(), midY = midY();
+		FontRenderer fr = this.fontRenderer;
+		Tessellator t = Tessellator.instance;
 
-		// ---- Render map terrain ----
-		GL11.glPushMatrix();
-		GL11.glDisable(GL11.GL_DEPTH_TEST);
-		GL11.glEnable(GL11.GL_BLEND);
-		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+		Waypoint hovered = null;
+		boolean hoveredSpawn = false;
+		boolean complete = true;
 
-		// Dark background for the whole screen
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		GL11.glColor4f(0.08f, 0.08f, 0.10f, 1.0f);
-		drawQuad(0, 0, this.width, this.height);
-
-		// Full quality: we always use pixelStep 1 with the texture method for maximum sharpness.
-		// Performance is maintained because we only upload once when the view changes.
-		int pixelStep = 1;
-
-		// Check if cache needs rebuild
-		int playerBlockX = (int) Math.floor(viewCenterX);
-		int playerBlockZ = (int) Math.floor(viewCenterZ);
-		boolean cacheValid = (mapColorCache != null && mapHeightCache != null
-				&& cacheW == mapW && cacheH == mapH
-				&& cachedCenterX == playerBlockX
-				&& cachedCenterZ == playerBlockZ
-				&& cachedZoom == MapConfig.instance.fullscreenZoom
-				&& cachedViewDim == viewDimension);
-
-		if (!cacheValid) {
-			if (mapColorCache == null || cacheW != mapW || cacheH != mapH) {
-				mapColorCache = new int[mapW * mapH];
-				mapHeightCache = new int[mapW * mapH];
-				cacheW = mapW;
-				cacheH = mapH;
-			}
-
-			int halfW = mapW / 2;
-			int halfH = mapH / 2;
-
-			// First pass: sample colors and heights (use cached tiles when available)
-			for (int py = 0; py < mapH; py += pixelStep) {
-				for (int px = 0; px < mapW; px += pixelStep) {
-					int worldX = (int) Math.floor(viewCenterX + (px - halfW) / zoomFactor);
-					int worldZ = (int) Math.floor(viewCenterZ + (py - halfH) / zoomFactor);
-
-					int cachedData = 0;
-					if (crossDimTiles != null) {
-						cachedData = MapTileManager.getBlockColorFromTiles(crossDimTiles, worldX, worldZ);
-						// Note: crossDimTiles currently don't store height, so it will fall back to 64
-					} else {
-						// Standard dimension lookup with height support
-						int cx = Math.floorDiv(worldX, 16);
-						int cz = Math.floorDiv(worldZ, 16);
-						int[] colors = MapTileManager.instance.getChunkColors(cx, cz);
-						if (colors != null) {
-							cachedData = colors[Math.floorMod(worldZ, 16) * 16 + Math.floorMod(worldX, 16)];
-						}
-					}
-
-					if (cachedData != 0) {
-						int color = cachedData & 0xFFFFFF;
-						int height = (cachedData >> 24) & 0xFF;
-						if (height == 0)
-							height = 64; // Fallback for old cache files
-
-						mapColorCache[py * mapW + px] = color;
-						mapHeightCache[py * mapW + px] = height;
-					} else if (crossDimTiles == null) {
-						// Fall back to live sampling only for current dimension
-						long packed = MinimapRenderer.getSurfaceInfo(world, worldX, worldZ, player);
-						int color = (int) (packed >> 32);
-						int height = (int) (packed & 0xFFFFFFFFL);
-						mapColorCache[py * mapW + px] = color;
-						mapHeightCache[py * mapW + px] = height;
-					}
-				}
-			}
-
-			// Second pass: height shading
-			for (int py = pixelStep; py < mapH; py += pixelStep) {
-				for (int px = 0; px < mapW; px += pixelStep) {
-					int idx = py * mapW + px;
-					int idxAbove = (py - pixelStep) * mapW + px;
-
-					int color = mapColorCache[idx];
-					if (color == 0)
-						continue;
-
-					int h = mapHeightCache[idx];
-					int hAbove = mapHeightCache[idxAbove];
-
-					if (hAbove > 0) {
-						if (h > hAbove) {
-							color = brighten(color, 1.15f);
-						} else if (h < hAbove) {
-							color = darken(color, 0.85f);
-						}
-						mapColorCache[idx] = color;
-					}
-				}
-			}
-
-			cachedCenterX = playerBlockX;
-			cachedCenterZ = playerBlockZ;
-			cachedZoom = MapConfig.instance.fullscreenZoom;
-			cachedViewDim = viewDimension;
-
-			// Update texture
-			if (mapTextureId == -1) {
-				mapTextureId = GL11.glGenTextures();
-			}
-
-			if (mapBuffer == null || mapBuffer.capacity() < mapW * mapH) {
-				mapBuffer = BufferUtils.createIntBuffer(mapW * mapH);
-				mapPixels = new int[mapW * mapH];
-			}
-
-			// Convert mapColorCache to AARRGGBB for OpenGL
-			// Use height cache to distinguish "no data" from "valid black block":
-			// height > 0 means real terrain was sampled, even if color is 0x000000
-			for (int i = 0; i < mapW * mapH; i++) {
-				int color = mapColorCache[i];
-				int height = mapHeightCache[i];
-				if (color != 0 || height > 0) {
-					mapPixels[i] = 0xFF000000 | color; // Fully opaque (real terrain)
-				} else {
-					mapPixels[i] = 0; // Truly no data - transparent
-				}
-			}
-
-			mapBuffer.clear();
-			mapBuffer.put(mapPixels);
-			mapBuffer.flip();
-
-			GL11.glBindTexture(GL11.GL_TEXTURE_2D, mapTextureId);
-			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-			GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, mapW, mapH, 0, GL12.GL_BGRA,
-					GL12.GL_UNSIGNED_INT_8_8_8_8_REV, mapBuffer);
-		}
-
-		// Render cached map as a single texture (high performance)
-		if (mapTextureId != -1) {
-			GL11.glEnable(GL11.GL_TEXTURE_2D);
-			GL11.glBindTexture(GL11.GL_TEXTURE_2D, mapTextureId);
-			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-
-			Tessellator t = Tessellator.instance;
-			t.startDrawingQuads();
-			t.addVertexWithUV(mapLeft, mapBottom, 0.0, 0.0, 1.0);
-			t.addVertexWithUV(mapRight, mapBottom, 0.0, 1.0, 1.0);
-			t.addVertexWithUV(mapRight, mapTop, 0.0, 1.0, 0.0);
-			t.addVertexWithUV(mapLeft, mapTop, 0.0, 0.0, 0.0);
-			t.draw();
+		int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT
+				| GL11.GL_SCISSOR_BIT);
+		try {
+			GL11.glDisable(GL11.GL_DEPTH_TEST);
+			GL11.glDisable(GL11.GL_CULL_FACE);
+			GL11.glDisable(GL11.GL_ALPHA_TEST);
+			GL11.glDisable(GL11.GL_LIGHTING);
+			GL11.glEnable(GL11.GL_BLEND);
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			GL11.glLineWidth(1.0f);
 			GL11.glDisable(GL11.GL_TEXTURE_2D);
-		}
 
-		// ---- Chunk grid ----
-		if (MapConfig.instance.showChunkGrid) {
-			renderChunkGrid(mapLeft, mapTop, mapW, mapH, zoomFactor);
-		}
+			fill(t, 0, 0, this.width, this.height, 0.08f, 0.08f, 0.10f, 1.0f);
 
-		// ---- Spawn marker ----
-		if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
-			int spawnX, spawnZ;
-			if (viewDimension == 1) {
-				spawnX = 100;
-				spawnZ = 0;
-			} else if (viewDimension == -1) {
-				spawnX = SpawnTracker.instance.getNetherSpawnX();
-				spawnZ = SpawnTracker.instance.getNetherSpawnZ();
-			} else {
-				spawnX = SpawnTracker.instance.getSpawnX();
-				spawnZ = SpawnTracker.instance.getSpawnZ();
-			}
-			renderMapMarker(spawnX, spawnZ, mapLeft, mapTop, mapW, mapH, zoomFactor, 0, 102, 204, "Spawn", mouseX,
-					mouseY, false);
-			renderMapMarker(spawnX, spawnZ, mapLeft, mapTop, mapW, mapH, zoomFactor, 0, 102, 204, "Spawn", mouseX,
-					mouseY, true);
-		}
+			// Clip everything map-related to the area between the two bars.
+			int scissorY = (int) Math.round((double) BOTTOM_BAR_HEIGHT * mc.displayHeight / this.height);
+			int scissorH = (int) Math.round((double) mapH * mc.displayHeight / this.height);
+			GL11.glEnable(GL11.GL_SCISSOR_TEST);
+			GL11.glScissor(0, scissorY, mc.displayWidth, Math.max(0, scissorH));
 
-		// ---- Waypoints ----
-		if (MapConfig.instance.showWaypoints) {
-			List<Waypoint> waypoints;
-			if (crossDimWaypoints != null) {
-				waypoints = crossDimWaypoints;
-			} else {
-				waypoints = WaypointManager.instance.getWaypoints();
-			}
+			// ---- Terrain
+			double halfW = this.width / 2.0, halfH = mapH / 2.0;
+			rectX[0] = -halfW;
+			rectY[0] = -halfH;
+			rectX[1] = halfW;
+			rectY[1] = -halfH;
+			rectX[2] = halfW;
+			rectY[2] = halfH;
+			rectX[3] = -halfW;
+			rectY[3] = halfH;
+			GL11.glEnable(GL11.GL_TEXTURE_2D);
+			complete = MapDraw.draw(storage, centerX, centerZ, scale, 0.0, midX, midY, rectX, rectY, 4, 1.0f,
+					guiScale, true);
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			GL11.glDisable(GL11.GL_TEXTURE_2D);
 
-			// Pass 1: Draw all markers
-			for (Waypoint wp : waypoints) {
-				if (!wp.enabled)
-					continue;
-				renderMapMarker(wp.x, wp.z, mapLeft, mapTop, mapW, mapH, zoomFactor,
-						wp.getRed(), wp.getGreen(), wp.getBlue(), wp.name, mouseX, mouseY, false);
-			}
+			if (MapConfig.instance.showChunkGrid)
+				drawChunkGrid(t, mapTop, mapBottom);
 
-			// Pass 2: Draw all labels ON TOP of all markers
-			for (Waypoint wp : waypoints) {
-				if (!wp.enabled)
-					continue;
-				renderMapMarker(wp.x, wp.z, mapLeft, mapTop, mapW, mapH, zoomFactor,
-						wp.getRed(), wp.getGreen(), wp.getBlue(), wp.name, mouseX, mouseY, true);
-			}
-		}
-
-		// ---- Player arrow (Interpolated for smooth movement and rotation) ----
-		double interpPlayerX = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
-		double interpPlayerZ = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
-		float interpPlayerYaw = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks;
-
-		int playerScreenX = mapLeft + mapW / 2 + (int) ((interpPlayerX - viewCenterX) * zoomFactor);
-		int playerScreenZ = mapTop + mapH / 2 + (int) ((interpPlayerZ - viewCenterZ) * zoomFactor);
-		if (playerScreenX >= mapLeft && playerScreenX < mapRight
-				&& playerScreenZ >= mapTop && playerScreenZ < mapBottom) {
-			drawPlayerArrow(playerScreenX, playerScreenZ, interpPlayerYaw);
-		}
-
-		// ---- Compass labels ----
-		GL11.glEnable(GL11.GL_TEXTURE_2D);
-		FontRenderer fr = mc.fontRenderer;
-		if (fr != null && MapConfig.instance.showCompass) {
-			int cx = this.width / 2;
-			drawStringOutlined(fr, "N", cx - fr.getStringWidth("N") / 2, mapTop + 4, 0xFFFFFF, 0x000000);
-			drawStringOutlined(fr, "S", cx - fr.getStringWidth("S") / 2, mapBottom - 14, 0xFFFFFF, 0x000000);
-			drawStringOutlined(fr, "W", mapLeft + 4, mapTop + mapH / 2 - 4, 0xFFFFFF, 0x000000);
-			drawStringOutlined(fr, "E", mapRight - fr.getStringWidth("E") - 4, mapTop + mapH / 2 - 4, 0xFFFFFF,
-					0x000000);
-		}
-
-		// ---- Top bar ----
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		GL11.glColor4f(0.05f, 0.05f, 0.07f, 0.92f);
-		drawQuad(0, 0, this.width, TOP_BAR_HEIGHT);
-		// Bottom border line
-		GL11.glColor4f(0.3f, 0.3f, 0.35f, 0.8f);
-		drawQuad(0, TOP_BAR_HEIGHT - 1, this.width, TOP_BAR_HEIGHT);
-
-		// ---- Dimension tabs (custom drawn) ----
-		GL11.glEnable(GL11.GL_TEXTURE_2D);
-		if (fr != null) {
-			String[] dimNames = { "Overworld", "Nether", "End" };
-			int[] dimIds = { 0, -1, 1 };
-			int tabGap = 16;
-			int totalTabW = 0;
-			for (String n : dimNames)
-				totalTabW += fr.getStringWidth(n);
-			totalTabW += tabGap * (dimNames.length - 1);
-			int tabX = (this.width - totalTabW) / 2;
-			int tabY = (TOP_BAR_HEIGHT - 8) / 2;
-			for (int i = 0; i < dimNames.length; i++) {
-				boolean active = (viewDimension == dimIds[i]);
-				int tw = fr.getStringWidth(dimNames[i]);
-				int color = active ? 0xFFFFFF : 0x888888;
-				fr.drawStringWithShadow(dimNames[i], tabX, tabY, color);
-				if (active) {
-					GL11.glDisable(GL11.GL_TEXTURE_2D);
-					GL11.glColor4f(0.4f, 0.6f, 1.0f, 1.0f);
-					drawQuad(tabX - 1, tabY + 10, tabX + tw + 1, tabY + 12);
-					GL11.glEnable(GL11.GL_TEXTURE_2D);
+			// ---- Markers
+			boolean mouseOnMap = inMapArea(mx, my) && !menuOpen;
+			double bestDist = HOVER_RADIUS * HOVER_RADIUS;
+			t.startDrawing(GL11.GL_TRIANGLES);
+			if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
+				double sx = toScreenX(spawnX() + 0.5), sy = toScreenY(spawnZ() + 0.5);
+				if (onScreen(sx, sy)) {
+					MapMarkers.waypoint(t, Math.round(sx), Math.round(sy), 3, 0x0066CC);
+					double d = (mx - sx) * (mx - sx) + (my - sy) * (my - sy);
+					if (mouseOnMap && d < bestDist) {
+						bestDist = d;
+						hoveredSpawn = true;
+					}
 				}
-				tabX += tw + tabGap;
 			}
+			if (MapConfig.instance.showWaypoints) {
+				List<Waypoint> list = waypoints();
+				for (int i = 0, n = list.size(); i < n; i++) {
+					Waypoint wp = list.get(i);
+					if (!wp.enabled)
+						continue;
+					double sx = toScreenX(wp.x + 0.5), sy = toScreenY(wp.z + 0.5);
+					if (!onScreen(sx, sy))
+						continue;
+					MapMarkers.waypoint(t, Math.round(sx), Math.round(sy), 3, wp.color);
+					double d = (mx - sx) * (mx - sx) + (my - sy) * (my - sy);
+					if (mouseOnMap && d < bestDist) {
+						bestDist = d;
+						hovered = wp;
+						hoveredSpawn = false;
+					}
+				}
+			}
+			if (viewingPlayerDimension()) {
+				double ppx = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
+				double ppz = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
+				float yaw = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks;
+				double sx = toScreenX(ppx), sy = toScreenY(ppz);
+				if (onScreen(sx, sy))
+					MapMarkers.playerArrow(t, sx, sy, Math.toRadians(yaw + 90.0), 8.0);
+			}
+			t.draw();
+			GL11.glDisable(GL11.GL_SCISSOR_TEST);
+
+			// ---- Bars
+			fill(t, 0, 0, this.width, TOP_BAR_HEIGHT, 0.05f, 0.05f, 0.07f, 0.94f);
+			fill(t, 0, TOP_BAR_HEIGHT - 1, this.width, TOP_BAR_HEIGHT, 0.30f, 0.30f, 0.35f, 0.8f);
+			fill(t, 0, mapBottom, this.width, this.height, 0.05f, 0.05f, 0.07f, 0.94f);
+			fill(t, 0, mapBottom, this.width, mapBottom + 1, 0.30f, 0.30f, 0.35f, 0.8f);
+
+			// Active dimension underline
+			if (fr != null) {
+				int tabX = tabStartX(fr);
+				int tabY = (TOP_BAR_HEIGHT - 8) / 2;
+				for (int i = 0; i < DIM_NAMES.length; i++) {
+					int tw = fr.getStringWidth(DIM_NAMES[i]);
+					if (viewDimension == DIM_IDS[i])
+						fill(t, tabX - 1, tabY + 10, tabX + tw + 1, tabY + 12, 0.4f, 0.6f, 1.0f, 1.0f);
+					tabX += tw + TAB_GAP;
+				}
+			}
+
+			// ---- Text
+			GL11.glEnable(GL11.GL_TEXTURE_2D);
+			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+			if (fr != null) {
+				if (MapConfig.instance.showCompass) {
+					drawStringOutlined(fr, "N", this.width / 2 - fr.getStringWidth("N") / 2, mapTop + 4);
+					drawStringOutlined(fr, "S", this.width / 2 - fr.getStringWidth("S") / 2, mapBottom - 12);
+					drawStringOutlined(fr, "W", 4, mapTop + mapH / 2 - 4);
+					drawStringOutlined(fr, "E", this.width - fr.getStringWidth("E") - 4, mapTop + mapH / 2 - 4);
+				}
+
+				int tabX = tabStartX(fr);
+				int tabY = (TOP_BAR_HEIGHT - 8) / 2;
+				for (int i = 0; i < DIM_NAMES.length; i++) {
+					fr.drawStringWithShadow(DIM_NAMES[i], tabX, tabY, viewDimension == DIM_IDS[i] ? 0xFFFFFF : 0x888888);
+					tabX += fr.getStringWidth(DIM_NAMES[i]) + TAB_GAP;
+				}
+
+				drawBottomBar(fr, storage, player, mx, my, mapBottom, complete);
+
+				if (!menuOpen) {
+					if (hovered != null) {
+						drawLabel(t, fr, hovered.name + "  §7" + hovered.x + ", " + hovered.y + ", " + hovered.z,
+								toScreenX(hovered.x + 0.5), toScreenY(hovered.z + 0.5), hovered.color);
+					} else if (hoveredSpawn) {
+						drawLabel(t, fr, "Spawn  §7" + spawnX() + ", " + spawnZ(), toScreenX(spawnX() + 0.5),
+								toScreenY(spawnZ() + 0.5), 0x5599FF);
+					}
+				} else {
+					drawMenu(t, fr, mx, my);
+				}
+			}
+			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+		} finally {
+			GL11.glPopAttrib();
+			GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
 		}
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-
-		// ---- Bottom bar ----
-		GL11.glColor4f(0.05f, 0.05f, 0.07f, 0.92f);
-		drawQuad(0, this.height - BOTTOM_BAR_HEIGHT, this.width, this.height);
-		// Top border line
-		GL11.glColor4f(0.3f, 0.3f, 0.35f, 0.8f);
-		drawQuad(0, this.height - BOTTOM_BAR_HEIGHT, this.width, this.height - BOTTOM_BAR_HEIGHT + 1);
-
-		GL11.glEnable(GL11.GL_TEXTURE_2D);
-
-		// Bottom bar info: cursor coordinates
-		if (fr != null) {
-			int halfW = mapW / 2;
-			int halfH = mapH / 2;
-			int cursorWorldX = (int) Math.floor(viewCenterX + (mouseX - mapLeft - halfW) / zoomFactor);
-			int cursorWorldZ = (int) Math.floor(viewCenterZ + (mouseY - mapTop - halfH) / zoomFactor);
-
-			String cursorCoords = String.format("Cursor: x: %d, z: %d", cursorWorldX, cursorWorldZ);
-
-			String playerCoords = String.format("Player: x: %d, y: %d, z: %d",
-					(int) player.posX, (int) player.posY, (int) player.posZ);
-
-			int bottomTextY = this.height - BOTTOM_BAR_HEIGHT + 5;
-			fr.drawStringWithShadow(cursorCoords, 6, bottomTextY, 0xCCCCCC);
-
-			// Player coords on the right
-			fr.drawStringWithShadow(playerCoords, this.width - fr.getStringWidth(playerCoords) - 6, bottomTextY,
-					0xCCCCCC);
-
-			// Zoom level in center
-			String zoomStr = "Zoom: " + MapConfig.instance.fullscreenZoom;
-			fr.drawStringWithShadow(zoomStr, this.width / 2 - fr.getStringWidth(zoomStr) / 2, bottomTextY, 0xAAAAFF);
-		}
-
-		GL11.glDisable(GL11.GL_BLEND);
-		GL11.glEnable(GL11.GL_DEPTH_TEST);
-		GL11.glPopMatrix();
 
 		super.drawScreen(mouseX, mouseY, partialTicks);
 	}
 
-	// ---- Rendering helpers ----
+	private boolean onScreen(double sx, double sy) {
+		return sx >= -8 && sx <= this.width + 8 && sy >= TOP_BAR_HEIGHT - 8
+				&& sy <= this.height - BOTTOM_BAR_HEIGHT + 8;
+	}
 
-	private void renderChunkGrid(int mapLeft, int mapTop, int mapW, int mapH, double zoomFactor) {
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		GL11.glColor4f(1f, 1f, 1f, 0.12f);
+	private int tabStartX(FontRenderer fr) {
+		int total = TAB_GAP * (DIM_NAMES.length - 1);
+		for (String name : DIM_NAMES)
+			total += fr.getStringWidth(name);
+		return (this.width - total) / 2;
+	}
 
-		int chunkPixels = (int) (16 * zoomFactor);
-		if (chunkPixels < 4)
-			return; // Too zoomed out for grid
+	private void drawBottomBar(FontRenderer fr, MapStorage storage, EntityPlayer player, double mx, double my,
+			int mapBottom, boolean complete) {
+		int textY = mapBottom + 5;
 
-		int halfW = mapW / 2;
-		int halfH = mapH / 2;
-
-		// Offset so grid lines align with actual chunk boundaries
-		double offsetX = (viewCenterX % 16) * zoomFactor;
-		double offsetZ = (viewCenterZ % 16) * zoomFactor;
-
-		Tessellator t = Tessellator.instance;
-		t.startDrawingQuads();
-		t.setColorRGBA(255, 255, 255, 25);
-
-		// Vertical lines
-		for (int gx = (int) (-offsetX + halfW % chunkPixels); gx < mapW; gx += chunkPixels) {
-			if (gx < 0)
-				continue;
-			t.addVertex(mapLeft + gx, mapTop, 0);
-			t.addVertex(mapLeft + gx + 1, mapTop, 0);
-			t.addVertex(mapLeft + gx + 1, mapTop + mapH, 0);
-			t.addVertex(mapLeft + gx, mapTop + mapH, 0);
+		String left;
+		if (inMapArea(mx, my)) {
+			int wx = (int) Math.floor(toWorldX(mx));
+			int wz = (int) Math.floor(toWorldZ(my));
+			int h = storage != null ? storage.dataAt(wx, wz) >>> 24 : 0;
+			left = "Cursor: x: " + wx + ", z: " + wz + (h > 0 ? ", y: " + h : "");
+		} else {
+			left = "Right-click the map for options";
 		}
+		fr.drawStringWithShadow(left, 6, textY, 0xCCCCCC);
 
-		// Horizontal lines
-		for (int gz = (int) (-offsetZ + halfH % chunkPixels); gz < mapH; gz += chunkPixels) {
-			if (gz < 0)
-				continue;
-			t.addVertex(mapLeft, mapTop + gz, 0);
-			t.addVertex(mapLeft + mapW, mapTop + gz, 0);
-			t.addVertex(mapLeft + mapW, mapTop + gz + 1, 0);
-			t.addVertex(mapLeft, mapTop + gz + 1, 0);
+		String right = "Player: x: " + (int) Math.floor(player.posX) + ", y: "
+				+ (int) Math.floor(player.boundingBox.minY) + ", z: " + (int) Math.floor(player.posZ);
+		int rightX = this.width - fr.getStringWidth(right) - 6;
+		fr.drawStringWithShadow(right, rightX, textY, 0xCCCCCC);
+
+		String mid = "Zoom: " + formatScale(targetScale);
+		if (!complete)
+			mid += "  §8loading...";
+		else if (!follow && viewingPlayerDimension())
+			mid += "  §8[C] follow";
+		int midW = fr.getStringWidth(mid);
+		int midX = this.width / 2 - midW / 2;
+		// Only when it fits between the two side texts.
+		if (midX > 6 + fr.getStringWidth(left) + 8 && midX + midW < rightX - 8)
+			fr.drawStringWithShadow(mid, midX, textY, 0xAAAAFF);
+	}
+
+	private static String formatScale(double s) {
+		double v = s >= 1.0 ? s : 1.0 / s;
+		double rounded = Math.round(v * 10.0) / 10.0;
+		String num = rounded == Math.rint(rounded) ? String.valueOf((long) rounded) : String.valueOf(rounded);
+		return s >= 1.0 ? num + "x" : "1/" + num + "x";
+	}
+
+	private void drawChunkGrid(Tessellator t, int mapTop, int mapBottom) {
+		double step = 16.0 * scale;
+		if (step < 5.0)
+			return;
+		t.startDrawing(GL11.GL_LINES);
+		t.setColorRGBA_F(1.0f, 1.0f, 1.0f, 0.14f);
+		int k0 = (int) Math.ceil(toWorldX(0) / 16.0), k1 = (int) Math.floor(toWorldX(this.width) / 16.0);
+		for (int k = k0; k <= k1; k++) {
+			double sx = toScreenX(k * 16.0);
+			t.addVertex(sx, mapTop, 0.0);
+			t.addVertex(sx, mapBottom, 0.0);
+		}
+		int j0 = (int) Math.ceil(toWorldZ(mapTop) / 16.0), j1 = (int) Math.floor(toWorldZ(mapBottom) / 16.0);
+		for (int j = j0; j <= j1; j++) {
+			double sy = toScreenY(j * 16.0);
+			t.addVertex(0, sy, 0.0);
+			t.addVertex(this.width, sy, 0.0);
 		}
 		t.draw();
 	}
 
-	private void renderMapMarker(int worldX, int worldZ, int mapLeft, int mapTop,
-			int mapW, int mapH, double zoomFactor, int r, int g, int b, String label, int mouseX, int mouseY,
-			boolean drawLabelStep) {
-		int halfW = mapW / 2;
-		int halfH = mapH / 2;
+	/** Small name tag above a marker. Leaves texturing enabled. */
+	private void drawLabel(Tessellator t, FontRenderer fr, String text, double sx, double sy, int rgb) {
+		int textW = fr.getStringWidth(text);
+		int x = (int) Math.round(sx) - textW / 2;
+		int y = (int) Math.round(sy) - 17;
+		x = Math.max(3, Math.min(x, this.width - textW - 3));
+		if (y < TOP_BAR_HEIGHT + 2)
+			y = (int) Math.round(sy) + 8;
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		fill(t, x - 3, y - 2, x + textW + 3, y + 10, 0.0f, 0.0f, 0.0f, 0.72f);
+		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		fr.drawStringWithShadow(text, x, y, rgb & 0xFFFFFF);
+	}
 
-		int screenX = mapLeft + halfW + (int) ((worldX + 0.5 - viewCenterX) * zoomFactor);
-		int screenZ = mapTop + halfH + (int) ((worldZ + 0.5 - viewCenterZ) * zoomFactor);
+	private void fill(Tessellator t, double x0, double y0, double x1, double y1, float r, float g, float b, float a) {
+		t.startDrawingQuads();
+		t.setColorRGBA_F(r, g, b, a);
+		t.addVertex(x0, y1, 0.0);
+		t.addVertex(x1, y1, 0.0);
+		t.addVertex(x1, y0, 0.0);
+		t.addVertex(x0, y0, 0.0);
+		t.draw();
+	}
 
-		// Check if on screen
-		if (screenX < mapLeft - 10 || screenX > mapLeft + mapW + 10
-				|| screenZ < mapTop - 10 || screenZ > mapTop + mapH + 10) {
-			return;
-		}
+	private void drawStringOutlined(FontRenderer fr, String text, int x, int y) {
+		fr.drawString(text, x + 1, y, 0x000000);
+		fr.drawString(text, x - 1, y, 0x000000);
+		fr.drawString(text, x, y + 1, 0x000000);
+		fr.drawString(text, x, y - 1, 0x000000);
+		fr.drawString(text, x, y, 0xFFFFFF);
+	}
 
-		if (!drawLabelStep) {
-			GL11.glDisable(GL11.GL_TEXTURE_2D);
-			drawDiamond(screenX, screenZ, 5, r, g, b);
+	// ------------------------------------------------------------ context menu
+
+	private static final int MENU_ROW = 13;
+
+	private void openMenu(int mouseX, int mouseY) {
+		menuLabels.clear();
+		menuActions.clear();
+		menuWorldX = (int) Math.floor(toWorldX(mouseX));
+		menuWorldZ = (int) Math.floor(toWorldZ(mouseY));
+		menuWaypoint = waypointNear(mouseX, mouseY);
+		boolean canTeleport = MapConfig.instance.showTeleportButton && viewingPlayerDimension();
+
+		if (menuWaypoint != null) {
+			addMenuItem("Edit \"" + menuWaypoint.name + "\"", ACTION_EDIT);
+			addMenuItem(menuWaypoint.enabled ? "Hide" : "Show", ACTION_TOGGLE);
+			if (canTeleport)
+				addMenuItem("Teleport to waypoint", ACTION_TELEPORT_WAYPOINT);
+			addMenuItem("§cDelete", ACTION_DELETE);
 		} else {
-			// Only show label if mouse is close (e.g. within 15 pixels) and not holding
-			// right click
-			double distSq = (mouseX - screenX) * (mouseX - screenX) + (mouseY - screenZ) * (mouseY - screenZ);
-			boolean isHovered = distSq < 225; // 15^2
-			boolean hideLabels = Mouse.isButtonDown(1);
+			addMenuItem("New waypoint here", ACTION_NEW_WAYPOINT);
+			if (canTeleport)
+				addMenuItem("Teleport here", ACTION_TELEPORT_HERE);
+		}
+		if (viewingPlayerDimension())
+			addMenuItem("Center on player", ACTION_CENTER);
 
-			FontRenderer fr = Minecraft.getMinecraft().fontRenderer;
-			if (fr != null && label != null && isHovered && !hideLabels) {
-				GL11.glEnable(GL11.GL_TEXTURE_2D);
-				int textW = fr.getStringWidth(label);
-				// Background box
-				GL11.glDisable(GL11.GL_TEXTURE_2D);
-				GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.65f);
-				drawQuad(screenX - textW / 2 - 2, screenZ - 16, screenX + textW / 2 + 2, screenZ - 6);
-				GL11.glEnable(GL11.GL_TEXTURE_2D);
+		menuW = 0;
+		for (String label : menuLabels)
+			menuW = Math.max(menuW, this.fontRenderer.getStringWidth(label));
+		menuW += 12;
+		int menuH = menuLabels.size() * MENU_ROW + 4;
+		menuX = Math.max(2, Math.min(mouseX, this.width - menuW - 2));
+		menuY = Math.max(TOP_BAR_HEIGHT + 2, Math.min(mouseY, this.height - BOTTOM_BAR_HEIGHT - menuH - 2));
+		menuOpen = true;
+		dragging = false;
+	}
 
-				int labelColor = ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
-				fr.drawStringWithShadow(label, screenX - textW / 2, screenZ - 15, labelColor);
+	private void addMenuItem(String label, int action) {
+		menuLabels.add(label);
+		menuActions.add(action);
+	}
+
+	private int menuIndexAt(double mx, double my) {
+		if (!menuOpen || mx < menuX || mx >= menuX + menuW)
+			return -1;
+		int index = (int) Math.floor((my - menuY - 2) / MENU_ROW);
+		return index >= 0 && index < menuLabels.size() && my >= menuY + 2 ? index : -1;
+	}
+
+	private void drawMenu(Tessellator t, FontRenderer fr, double mx, double my) {
+		int menuH = menuLabels.size() * MENU_ROW + 4;
+		int hover = menuIndexAt(mx, my);
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		fill(t, menuX - 1, menuY - 1, menuX + menuW + 1, menuY + menuH + 1, 0.35f, 0.35f, 0.42f, 1.0f);
+		fill(t, menuX, menuY, menuX + menuW, menuY + menuH, 0.06f, 0.06f, 0.09f, 0.97f);
+		if (hover >= 0)
+			fill(t, menuX + 1, menuY + 2 + hover * MENU_ROW, menuX + menuW - 1, menuY + 2 + (hover + 1) * MENU_ROW,
+					0.25f, 0.40f, 0.75f, 0.85f);
+		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		for (int i = 0; i < menuLabels.size(); i++)
+			fr.drawStringWithShadow(menuLabels.get(i), menuX + 6, menuY + 4 + i * MENU_ROW, 0xFFFFFF);
+	}
+
+	private Waypoint waypointNear(double mx, double my) {
+		if (!MapConfig.instance.showWaypoints)
+			return null;
+		Waypoint best = null;
+		double bestDist = HOVER_RADIUS * HOVER_RADIUS;
+		for (Waypoint wp : waypoints()) {
+			if (!wp.enabled)
+				continue;
+			double dx = mx - toScreenX(wp.x + 0.5), dy = my - toScreenY(wp.z + 0.5);
+			double d = dx * dx + dy * dy;
+			if (d < bestDist) {
+				bestDist = d;
+				best = wp;
 			}
 		}
+		return best;
 	}
 
-	private void drawPlayerArrow(int centerX, int centerY, float yaw) {
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		GL11.glDisable(GL11.GL_CULL_FACE);
-
-		double angle = Math.toRadians(yaw + 90);
-		double sz = 8.0;
-
-		// Slim pointed arrow shape
-		double tipX = centerX + Math.cos(angle) * sz;
-		double tipY = centerY + Math.sin(angle) * sz;
-		double wingLX = centerX + Math.cos(angle + Math.PI * 0.82) * (sz * 0.6);
-		double wingLY = centerY + Math.sin(angle + Math.PI * 0.82) * (sz * 0.6);
-		double wingRX = centerX + Math.cos(angle - Math.PI * 0.82) * (sz * 0.6);
-		double wingRY = centerY + Math.sin(angle - Math.PI * 0.82) * (sz * 0.6);
-		double tailX = centerX + Math.cos(angle + Math.PI) * (sz * 0.2);
-		double tailY = centerY + Math.sin(angle + Math.PI) * (sz * 0.2);
-
-		Tessellator t = Tessellator.instance;
-
-		// 1. Drop shadow
-		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorRGBA(0, 0, 0, 100);
-		t.addVertex(tipX + 1, tipY + 1, 0.0);
-		t.addVertex(wingLX + 1, wingLY + 1, 0.0);
-		t.addVertex(tailX + 1, tailY + 1, 0.0);
-		t.addVertex(wingRX + 1, wingRY + 1, 0.0);
-		t.draw();
-
-		// 2. Black outline
-		GL11.glLineWidth(2.0f);
-		t.startDrawing(GL11.GL_LINE_LOOP);
-		t.setColorOpaque_F(0.0f, 0.0f, 0.0f);
-		t.addVertex(tipX, tipY, 0.0);
-		t.addVertex(wingLX, wingLY, 0.0);
-		t.addVertex(tailX, tailY, 0.0);
-		t.addVertex(wingRX, wingRY, 0.0);
-		t.draw();
-
-		// 3. Deep Gold fill
-		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorOpaque_F(0.65f, 0.45f, 0.05f);
-		t.addVertex(tipX, tipY, 0.0);
-		t.addVertex(wingLX, wingLY, 0.0);
-		t.addVertex(tailX, tailY, 0.0);
-		t.addVertex(wingRX, wingRY, 0.0);
-		t.draw();
-
-		// 4. Bright gold inner highlight
-		double hs = 0.6;
-		double hTipX = centerX + Math.cos(angle) * (sz * hs);
-		double hTipY = centerY + Math.sin(angle) * (sz * hs);
-		double hWingLX = centerX + Math.cos(angle + Math.PI * 0.82) * (sz * 0.38);
-		double hWingLY = centerY + Math.sin(angle + Math.PI * 0.82) * (sz * 0.38);
-		double hWingRX = centerX + Math.cos(angle - Math.PI * 0.82) * (sz * 0.38);
-		double hWingRY = centerY + Math.sin(angle - Math.PI * 0.82) * (sz * 0.38);
-		double hTailX = centerX + Math.cos(angle + Math.PI) * (sz * 0.08);
-		double hTailY = centerY + Math.sin(angle + Math.PI) * (sz * 0.08);
-
-		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorOpaque_F(1.0f, 0.85f, 0.2f);
-		t.addVertex(hTipX, hTipY, 0.0);
-		t.addVertex(hWingLX, hWingLY, 0.0);
-		t.addVertex(hTailX, hTailY, 0.0);
-		t.addVertex(hWingRX, hWingRY, 0.0);
-		t.draw();
-
-		GL11.glLineWidth(1.0f);
-		GL11.glEnable(GL11.GL_CULL_FACE);
-	}
-
-	private void drawDiamond(int cx, int cy, int size, int r, int g, int b) {
-		Tessellator t = Tessellator.instance;
-		float rf = r / 255.0f, gf = g / 255.0f, bf = b / 255.0f;
-
-		GL11.glDisable(GL11.GL_CULL_FACE);
-
-		// Half size minimalist marker
-		int s = Math.max(1, size / 2);
-		int outline = s + 1;
-
-		// 1. Black outline (1px thick square border)
-		t.startDrawing(GL11.GL_QUADS);
-		t.setColorOpaque_F(0f, 0f, 0f);
-		t.addVertex(cx - outline, cy - outline, 0.0);
-		t.addVertex(cx + outline, cy - outline, 0.0);
-		t.addVertex(cx + outline, cy + outline, 0.0);
-		t.addVertex(cx - outline, cy + outline, 0.0);
-		t.draw();
-
-		// 2. Colored inner square
-		t.startDrawing(GL11.GL_QUADS);
-		t.setColorOpaque_F(rf, gf, bf);
-		t.addVertex(cx - s, cy - s, 0.0);
-		t.addVertex(cx + s, cy - s, 0.0);
-		t.addVertex(cx + s, cy + s, 0.0);
-		t.addVertex(cx - s, cy + s, 0.0);
-		t.draw();
-
-		// 3. Bright contrast dot in center for visibility
-		if (s > 1) {
-			t.startDrawing(GL11.GL_QUADS);
-			t.setColorOpaque_F(1f, 1f, 1f); // White dot
-			t.addVertex(cx - 1, cy - 1, 0.0);
-			t.addVertex(cx + 1, cy - 1, 0.0);
-			t.addVertex(cx + 1, cy + 1, 0.0);
-			t.addVertex(cx - 1, cy + 1, 0.0);
-			t.draw();
+	private void runMenuAction(int action) {
+		Waypoint wp = menuWaypoint;
+		switch (action) {
+			case ACTION_NEW_WAYPOINT:
+				createWaypoint(menuWorldX, menuWorldZ);
+				break;
+			case ACTION_TELEPORT_HERE: {
+				int y = surfaceY(menuWorldX, menuWorldZ);
+				if (y < 0) {
+					this.mc.thePlayer.addChatMessage("§c[Minimap] Can't teleport there: that spot is unexplored.");
+				} else {
+					teleport(menuWorldX, y, menuWorldZ, "Map");
+				}
+				break;
+			}
+			case ACTION_CENTER:
+				follow = true;
+				zoomAnchored = false;
+				break;
+			case ACTION_EDIT:
+				if (wp != null)
+					this.mc.displayGuiScreen(new GuiWaypointEdit(this, wp, false, viewDimension, crossDimWaypoints));
+				break;
+			case ACTION_TOGGLE:
+				if (wp != null) {
+					wp.enabled = !wp.enabled;
+					saveWaypoints();
+				}
+				break;
+			case ACTION_DELETE:
+				if (wp != null) {
+					waypoints().remove(wp);
+					saveWaypoints();
+				}
+				break;
+			case ACTION_TELEPORT_WAYPOINT:
+				if (wp != null)
+					teleport(wp.x, wp.y + 2, wp.z, wp.name);
+				break;
 		}
-
-		GL11.glEnable(GL11.GL_CULL_FACE);
 	}
 
-	private void drawQuad(int x1, int y1, int x2, int y2) {
-		Tessellator t = Tessellator.instance;
-		t.startDrawingQuads();
-		t.addVertex(x1, y2, 0.0);
-		t.addVertex(x2, y2, 0.0);
-		t.addVertex(x2, y1, 0.0);
-		t.addVertex(x1, y1, 0.0);
-		t.draw();
+	/** Y to stand on at a map position, or -1 when nothing is known about it. */
+	private int surfaceY(int worldX, int worldZ) {
+		MapStorage storage = storage();
+		int h = storage != null ? storage.dataAt(worldX, worldZ) >>> 24 : 0;
+		return h > 0 ? h + 1 : -1;
 	}
 
-	private void drawStringOutlined(FontRenderer fr, String text, int x, int y, int color, int outline) {
-		fr.drawString(text, x + 1, y, outline);
-		fr.drawString(text, x - 1, y, outline);
-		fr.drawString(text, x, y + 1, outline);
-		fr.drawString(text, x, y - 1, outline);
-		fr.drawString(text, x, y, color);
+	private void createWaypoint(int worldX, int worldZ) {
+		int y = surfaceY(worldX, worldZ);
+		List<Waypoint> list = waypoints();
+		Waypoint wp = new Waypoint("Waypoint " + (list.size() + 1), worldX, y < 0 ? 64 : y, worldZ,
+				nextColor(list.size()));
+		list.add(wp); // GuiWaypointEdit removes it again if the user cancels
+		this.mc.displayGuiScreen(new GuiWaypointEdit(this, wp, true, viewDimension, crossDimWaypoints));
 	}
 
-	private int brighten(int color, float factor) {
-		int r = Math.min((int) (((color >> 16) & 0xFF) * factor), 255);
-		int g = Math.min((int) (((color >> 8) & 0xFF) * factor), 255);
-		int b = Math.min((int) ((color & 0xFF) * factor), 255);
-		return (r << 16) | (g << 8) | b;
+	private void teleport(int x, int y, int z, String name) {
+		String cmd = MapConfig.instance.teleportCommand
+				.replace("{x}", String.valueOf(x))
+				.replace("{y}", String.valueOf(y))
+				.replace("{z}", String.valueOf(z))
+				.replace("{dim}", String.valueOf(viewDimension))
+				.replace("{name}", name == null ? "" : name);
+		Minecraft minecraft = this.mc;
+		minecraft.displayGuiScreen(null);
+		if (minecraft.thePlayer != null)
+			minecraft.thePlayer.sendChatMessage(cmd);
 	}
 
-	private int darken(int color, float factor) {
-		int r = (int) (((color >> 16) & 0xFF) * factor);
-		int g = (int) (((color >> 8) & 0xFF) * factor);
-		int b = (int) ((color & 0xFF) * factor);
-		return (r << 16) | (g << 8) | b;
+	private static int nextColor(int index) {
+		int[] colors = { 0xFF5555, 0x55FF55, 0x5555FF, 0xFFFF55, 0xFF55FF, 0x55FFFF, 0xFF8800, 0xAA55FF };
+		return colors[index % colors.length];
 	}
 
-	// ---- Input handling ----
+	// ------------------------------------------------------------------- input
+
+	private void zoom(int steps, double mouseX, double mouseY) {
+		// Half-octave steps that always land exactly on 1x, 2x, 4x...
+		double level = Math.rint(Math.log(targetScale) / Math.log(2.0) * 2.0) + steps;
+		double next = Math.pow(2.0, level / 2.0);
+		next = Math.max(MapConfig.MIN_FULLSCREEN_SCALE, Math.min(MapConfig.MAX_FULLSCREEN_SCALE, next));
+		if (next == targetScale)
+			return;
+		targetScale = next;
+		if (!follow && inMapArea(mouseX, mouseY)) {
+			zoomAnchored = true;
+			anchorScreenX = mouseX;
+			anchorScreenY = mouseY;
+			anchorWorldX = toWorldX(mouseX);
+			anchorWorldZ = toWorldZ(mouseY);
+		} else {
+			zoomAnchored = false;
+		}
+		menuOpen = false;
+	}
 
 	@Override
 	protected void keyTyped(char c, int keyCode) {
-		if (keyCode == Keyboard.KEY_ESCAPE || keyCode == Keyboard.KEY_J) {
+		if (keyCode == Keyboard.KEY_ESCAPE) {
+			if (menuOpen) {
+				menuOpen = false;
+				return;
+			}
 			this.mc.displayGuiScreen(null);
 			return;
 		}
-
-		// Arrow key panning
-		double panAmount = 32.0 / Math.pow(2.0, -MapConfig.instance.fullscreenZoom);
-		if (keyCode == Keyboard.KEY_LEFT || keyCode == Keyboard.KEY_A) {
-			viewCenterX -= panAmount;
-			invalidateCache();
-		} else if (keyCode == Keyboard.KEY_RIGHT || keyCode == Keyboard.KEY_D) {
-			viewCenterX += panAmount;
-			invalidateCache();
-		} else if (keyCode == Keyboard.KEY_UP || keyCode == Keyboard.KEY_W) {
-			viewCenterZ -= panAmount;
-			invalidateCache();
-		} else if (keyCode == Keyboard.KEY_DOWN || keyCode == Keyboard.KEY_S) {
-			viewCenterZ += panAmount;
-			invalidateCache();
+		if (keyCode == MapConfig.fullscreenMapKey.keyCode) {
+			this.mc.displayGuiScreen(null);
+			return;
 		}
-
-		// Re-center on player
 		if (keyCode == Keyboard.KEY_C) {
-			Minecraft mc = Minecraft.getMinecraft();
-			if (mc.thePlayer != null) {
-				viewCenterX = mc.thePlayer.posX;
-				viewCenterZ = mc.thePlayer.posZ;
-				invalidateCache();
+			if (viewingPlayerDimension()) {
+				follow = true;
+				zoomAnchored = false;
 			}
+		} else if (keyCode == Keyboard.KEY_EQUALS || keyCode == Keyboard.KEY_ADD) {
+			zoom(1, midX(), midY());
+		} else if (keyCode == Keyboard.KEY_MINUS || keyCode == Keyboard.KEY_SUBTRACT) {
+			zoom(-1, midX(), midY());
 		}
 	}
 
 	@Override
 	protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
+		if (menuOpen) {
+			int index = menuIndexAt(mouseX, mouseY);
+			menuOpen = false;
+			if (mouseButton == 0 && index >= 0)
+				runMenuAction(menuActions.get(index));
+			return;
+		}
+
 		super.mouseClicked(mouseX, mouseY, mouseButton);
+		if (this.mc.currentScreen != this)
+			return; // a button opened another screen
+
+		if (mouseY < TOP_BAR_HEIGHT) {
+			if (mouseButton == 0 && this.fontRenderer != null) {
+				int tabX = tabStartX(this.fontRenderer);
+				for (int i = 0; i < DIM_NAMES.length; i++) {
+					int tw = this.fontRenderer.getStringWidth(DIM_NAMES[i]);
+					if (mouseX >= tabX - 4 && mouseX < tabX + tw + 4) {
+						switchDimension(DIM_IDS[i]);
+						return;
+					}
+					tabX += tw + TAB_GAP;
+				}
+			}
+			return;
+		}
+		if (!inMapArea(mouseX, mouseY))
+			return;
+
+		if (mouseButton == 1) {
+			openMenu(mouseX, mouseY);
+			return;
+		}
 		if (mouseButton != 0)
 			return;
 
 		long now = System.currentTimeMillis();
 		if (now - lastClickTime < 300 && Math.abs(mouseX - lastClickX) < 5 && Math.abs(mouseY - lastClickY) < 5) {
-			if (mouseY >= TOP_BAR_HEIGHT && mouseY < this.height - BOTTOM_BAR_HEIGHT) {
-				double zoomFactor = Math.pow(2.0, -MapConfig.instance.fullscreenZoom);
-				int mapW = this.width;
-				int mapH = this.height - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT;
-				int halfW = mapW / 2;
-				int halfH = mapH / 2;
-				int cursorWorldX = (int) (viewCenterX + (mouseX - halfW) / zoomFactor);
-				int cursorWorldZ = (int) (viewCenterZ + (mouseY - TOP_BAR_HEIGHT - halfH) / zoomFactor);
-				
-				Waypoint newWp = new Waypoint("New Waypoint", cursorWorldX, 64, cursorWorldZ, 0xFF5555);
-				WaypointManager.instance.addWaypoint(newWp);
-				this.mc.displayGuiScreen(new GuiWaypointEdit(this, newWp, true));
-				return;
-			}
+			lastClickTime = 0;
+			createWaypoint((int) Math.floor(toWorldX(mouseX)), (int) Math.floor(toWorldZ(mouseY)));
+			return;
 		}
 		lastClickTime = now;
 		lastClickX = mouseX;
 		lastClickY = mouseY;
 
-		// Check dimension tab clicks in top bar
-		Minecraft mcInst = Minecraft.getMinecraft();
-		FontRenderer fr2 = mcInst.fontRenderer;
-		if (fr2 != null && mouseY < TOP_BAR_HEIGHT) {
-			String[] dimNames = { "Overworld", "Nether", "End" };
-			int[] dimIds = { 0, -1, 1 };
-			int tabGap = 16;
-			int totalTabW = 0;
-			for (String n : dimNames)
-				totalTabW += fr2.getStringWidth(n);
-			totalTabW += tabGap * (dimNames.length - 1);
-			int tabX = (this.width - totalTabW) / 2;
-			for (int i = 0; i < dimNames.length; i++) {
-				int tw = fr2.getStringWidth(dimNames[i]);
-				if (mouseX >= tabX - 2 && mouseX < tabX + tw + 2) {
-					switchDimension(dimIds[i]);
-					return;
-				}
-				tabX += tw + tabGap;
-			}
-		}
-
-		// Map drag
-		if (mouseY >= TOP_BAR_HEIGHT && mouseY < this.height - BOTTOM_BAR_HEIGHT) {
-			dragging = true;
-			dragStartX = mouseX;
-			dragStartY = mouseY;
-			dragStartCenterX = viewCenterX;
-			dragStartCenterZ = viewCenterZ;
-		}
+		dragging = true;
+		dragMoved = false;
+		dragStartMouseX = Mouse.getX() * (double) this.width / this.mc.displayWidth;
+		dragStartMouseY = this.height - Mouse.getY() * (double) this.height / this.mc.displayHeight;
+		dragStartCenterX = centerX;
+		dragStartCenterZ = centerZ;
 	}
 
 	@Override
 	protected void mouseMovedOrUp(int mouseX, int mouseY, int mouseButton) {
 		super.mouseMovedOrUp(mouseX, mouseY, mouseButton);
-		if (mouseButton == 0) {
+		if (mouseButton == 0)
 			dragging = false;
-		}
 	}
 
 	@Override
 	public void handleMouseInput() {
 		super.handleMouseInput();
-
-		// Mouse drag panning
-		if (dragging && Mouse.isButtonDown(0)) {
-			int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-			int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
-			double zoomFactor = Math.pow(2.0, -MapConfig.instance.fullscreenZoom);
-
-			double dx = (mouseX - dragStartX) / zoomFactor;
-			double dz = (mouseY - dragStartY) / zoomFactor;
-
-			viewCenterX = dragStartCenterX - dx;
-			viewCenterZ = dragStartCenterZ - dz;
-			invalidateCache();
+		int wheel = Mouse.getEventDWheel();
+		if (wheel != 0) {
+			double mx = Mouse.getEventX() * (double) this.width / this.mc.displayWidth;
+			double my = this.height - Mouse.getEventY() * (double) this.height / this.mc.displayHeight;
+			zoom(wheel > 0 ? 1 : -1, mx, my);
 		}
-
-		// Scroll wheel zoom
-		int scroll = Mouse.getDWheel();
-		if (scroll != 0) {
-			if (scroll > 0) {
-				MapConfig.instance.fullscreenZoom = Math.max(MapConfig.instance.fullscreenZoom - 1, -4);
-			} else {
-				MapConfig.instance.fullscreenZoom = Math.min(MapConfig.instance.fullscreenZoom + 1, 4);
-			}
-			invalidateCache();
-		}
-	}
-
-	private void invalidateCache() {
-		cachedCenterX = Double.MIN_VALUE;
-		cachedCenterZ = Double.MIN_VALUE;
-		cachedZoom = Integer.MIN_VALUE;
-		cachedViewDim = Integer.MIN_VALUE;
 	}
 
 	@Override

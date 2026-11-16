@@ -1,5 +1,6 @@
 package net.fabricmc.example.mixin;
 
+import net.fabricmc.example.minimap.MapConfig;
 import net.minecraft.src.GameSettings;
 import net.minecraft.src.KeyBinding;
 import net.minecraft.src.Minecraft;
@@ -18,18 +19,13 @@ public abstract class GameSettingsMixin {
 
 	@Inject(method = "<init>(Lnet/minecraft/src/Minecraft;Ljava/io/File;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/src/GameSettings;loadOptions()V"))
 	private void addMinimapKeybind(Minecraft par1Minecraft, File par2File, CallbackInfo ci) {
-		// Add to keyBindings array
-		KeyBinding[] newKeyBindings = new KeyBinding[keyBindings.length + 6];
+		// Append our bindings before options.txt is read, so saved keys are restored.
+		KeyBinding[] extra = MapConfig.ALL_KEYS;
+		KeyBinding[] newKeyBindings = new KeyBinding[keyBindings.length + extra.length];
 		System.arraycopy(keyBindings, 0, newKeyBindings, 0, keyBindings.length);
-		newKeyBindings[keyBindings.length] = net.fabricmc.example.minimap.MapConfig.toggleEntitiesKey;
-		newKeyBindings[keyBindings.length + 1] = net.fabricmc.example.minimap.MapConfig.increaseSizeKey;
-		newKeyBindings[keyBindings.length + 2] = net.fabricmc.example.minimap.MapConfig.decreaseSizeKey;
-		newKeyBindings[keyBindings.length + 3] = net.fabricmc.example.minimap.MapConfig.waypointGuiKey;
-		newKeyBindings[keyBindings.length + 4] = net.fabricmc.example.minimap.MapConfig.fullscreenMapKey;
-		newKeyBindings[keyBindings.length + 5] = net.fabricmc.example.minimap.MapConfig.settingsKey;
+		System.arraycopy(extra, 0, newKeyBindings, keyBindings.length, extra.length);
 		keyBindings = newKeyBindings;
 
-		// Reset key binding array
 		KeyBinding.resetKeyBindingArrayAndHash();
 	}
 }

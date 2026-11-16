@@ -25,7 +25,47 @@ public class GuiWaypoints extends GuiScreen {
     private int viewDimension = Integer.MIN_VALUE;
     private java.util.List<Waypoint> crossDimWaypoints = null;
 
+    private final GuiScreen parent;
+
     public GuiWaypoints() {
+        this(null);
+    }
+
+    /** @param parent screen to return to when done (null returns to the game) */
+    public GuiWaypoints(GuiScreen parent) {
+        this.parent = parent;
+    }
+
+    /**
+     * Creates a waypoint on the ground under the player and opens it for naming.
+     * Cancelling the edit screen removes it again.
+     *
+     * @param crossDimList the waypoint list being edited when it is not the current
+     *                     dimension's, otherwise null
+     */
+    public static void openNewWaypointAtPlayer(Minecraft mc, GuiScreen parent, List<Waypoint> crossDimList,
+            int dimension) {
+        if (mc.thePlayer == null || mc.theWorld == null)
+            return;
+        int px = (int) Math.floor(mc.thePlayer.posX);
+        int pz = (int) Math.floor(mc.thePlayer.posZ);
+        int py = (int) Math.floor(mc.thePlayer.boundingBox.minY);
+
+        for (int y = py; y > 0; y--) {
+            int id = mc.theWorld.getBlockId(px, y - 1, pz);
+            if (id != 0) {
+                Block b = Block.blocksList[id];
+                if (b != null && b.blockMaterial.isSolid()) {
+                    py = y - 1;
+                    break;
+                }
+            }
+        }
+
+        List<Waypoint> list = crossDimList != null ? crossDimList : WaypointManager.instance.getWaypoints();
+        Waypoint wp = new Waypoint("Waypoint " + (list.size() + 1), px, py, pz, nextColor(list.size()));
+        list.add(wp); // GuiWaypointEdit removes it again if cancelled
+        mc.displayGuiScreen(new GuiWaypointEdit(parent, wp, true, dimension, crossDimList));
     }
 
     @SuppressWarnings("unchecked")
@@ -72,31 +112,7 @@ public class GuiWaypoints extends GuiScreen {
 
         switch (button.id) {
             case 0: // Add Here
-                Minecraft mc = Minecraft.getMinecraft();
-                if (mc.thePlayer != null) {
-                    int px = (int) Math.floor(mc.thePlayer.posX);
-                    int pz = (int) Math.floor(mc.thePlayer.posZ);
-                    int py = (int) mc.thePlayer.posY;
-
-                    for (int y = py; y > 0; y--) {
-                        int id = mc.theWorld.getBlockId(px, y - 1, pz);
-                        if (id != 0) {
-                            Block b = Block.blocksList[id];
-                            if (b != null && b.blockMaterial.isSolid()) {
-                                py = y - 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    List<Waypoint> list = crossDimWaypoints != null ? crossDimWaypoints
-                            : WaypointManager.instance.getWaypoints();
-                    String name = "Waypoint " + (list.size() + 1);
-                    int color = getNextColor(list.size());
-                    Waypoint wp = new Waypoint(name, px, py, pz, color);
-                    list.add(wp); // Temporarily add it, GuiWaypointEdit will remove it if cancelled
-                    mc.displayGuiScreen(new GuiWaypointEdit(this, wp, true, viewDimension, crossDimWaypoints));
-                }
+                openNewWaypointAtPlayer(Minecraft.getMinecraft(), this, crossDimWaypoints, viewDimension);
                 break;
             case 1: // Toggle All
                 List<Waypoint> wps = crossDimWaypoints != null ? crossDimWaypoints
@@ -118,7 +134,7 @@ public class GuiWaypoints extends GuiScreen {
                 }
                 break;
             case 2: // Done
-                this.mc.displayGuiScreen(null);
+                this.mc.displayGuiScreen(parent);
                 break;
             case 3: // Settings
                 this.mc.displayGuiScreen(new GuiMapSettings(this));
@@ -553,12 +569,21 @@ public class GuiWaypoints extends GuiScreen {
         int scroll = org.lwjgl.input.Mouse.getDWheel();
         if (scroll != 0) {
             scrollOffset += (scroll > 0) ? -1 : 1;
-            int maxScroll = Math.max(0, WaypointManager.instance.getWaypoints().size() - (visibleEntries - 1));
+            List<Waypoint> shown = crossDimWaypoints != null ? crossDimWaypoints
+                    : WaypointManager.instance.getWaypoints();
+            int maxScroll = Math.max(0, shown.size() - (visibleEntries - 1));
             scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
         }
     }
 
-    private int getNextColor(int index) {
+    @Override
+    protected void keyTyped(char c, int keyCode) {
+        if (keyCode == Keyboard.KEY_ESCAPE || keyCode == MapConfig.waypointGuiKey.keyCode) {
+            this.mc.displayGuiScreen(parent);
+        }
+    }
+
+    private static int nextColor(int index) {
         int[] colors = {
                 0xFF5555, 0x55FF55, 0x5555FF, 0xFFFF55,
                 0xFF55FF, 0x55FFFF, 0xFF8800, 0xAA55FF

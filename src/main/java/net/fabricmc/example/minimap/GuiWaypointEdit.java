@@ -108,16 +108,20 @@ public class GuiWaypointEdit extends GuiScreen {
             saveWaypoint();
             this.mc.displayGuiScreen(parent);
         } else if (button.id == 1) {
-            // Cancel — remove waypoint if it was just newly added
-            if (isNew) {
-                if (saveList != null) {
-                    saveList.remove(waypoint);
-                } else {
-                    WaypointManager.instance.removeWaypoint(waypoint);
-                }
-            }
-            this.mc.displayGuiScreen(parent);
+            cancel();
         }
+    }
+
+    /** Leaves without saving. A waypoint that was only just created is removed again. */
+    private void cancel() {
+        if (isNew) {
+            if (saveList != null) {
+                saveList.remove(waypoint);
+            } else {
+                WaypointManager.instance.removeWaypoint(waypoint);
+            }
+        }
+        this.mc.displayGuiScreen(parent);
     }
 
     private void saveWaypoint() {
@@ -151,7 +155,7 @@ public class GuiWaypointEdit extends GuiScreen {
     @Override
     protected void keyTyped(char c, int keyCode) {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            this.mc.displayGuiScreen(parent);
+            cancel();
             return;
         }
         if (keyCode == Keyboard.KEY_RETURN) {
