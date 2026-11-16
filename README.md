@@ -6,16 +6,19 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 ## Features
 
 ### Classic Minimap
-- **Texture-sampled block colors** — reads Minecraft's terrain atlas for accurate per-block colors.
-- **Topographic shading** — height-based lighting for terrain depth.
-- **Circular map** with a premium beveled frame and compass labels (N/E/S/W).
-- **Zoom** — scroll to zoom in/out, entities and waypoints track at all zoom levels.
+- **Texture-sampled block colors** — reads Minecraft's terrain atlas for accurate colors per block variant, and follows your resource pack.
+- **Topographic shading** — slope-based lighting for terrain depth, with water that darkens as it gets deeper.
+- **Circular or square map** with a premium beveled frame and compass labels (N/E/S/W).
+- **North-up or rotating** — optionally keep the way you are facing at the top.
+- **Zoom** — five levels from 4x to 1/4x, entities and waypoints track at all zoom levels.
+- **Smooth and light** — terrain is drawn from GPU textures, so the map scrolls smoothly at any frame rate and costs next to nothing.
 - **Dynamic HUD Proportions** — Minimap text automatically scales based on the size/zoom of your minimap for a perfectly clean look. 
 - **Chunk grid overlay** (toggleable).
 - **Biome tinting** for grass, leaves, and foliage.
 
 ### Full-Screen Topography
-- **Full-Screen Map** — A scalable, draggable full-screen map interface.
+- **Full-Screen Map** — Drag to pan, scroll to zoom towards the cursor, from close-up to an overview of everything you have explored.
+- **Right-Click Menu** — Create, edit, hide or delete waypoints and teleport straight from the map.
 - **Persistent Terrain** — Explored areas save to disk and display on the full-screen map even when far away, with intelligent silent patching if a chunk is loaded with missing data.
 - **Cross-Dimension Viewing** — Seamlessly browse map data from the Nether, End, or Overworld via UI tabs, without needing to travel there.
 - **Unpaused Journeys** — The settings menu allows you to leave the game unpaused while viewing the fullscreen map, perfect for long journeys or AFKing.
@@ -46,10 +49,25 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 | `J` | Open full-screen map |
 | `O` | Open minimap settings |
 | `B` | Open waypoint manager |
+| `N` | New waypoint where you stand |
+| `M` | Toggle minimap |
 | `F` | Toggle entity radar |
+| `=` / `-` | Zoom minimap in / out (numpad +/- also work) |
 | `]` | Increase minimap size |
 | `[` | Decrease minimap size |
-| `Scroll` | Zoom in/out |
+
+All keys can be rebound in the Controls menu.
+
+On the full-screen map:
+
+| Input | Action |
+| --- | --- |
+| `Drag` | Pan |
+| `Scroll` or `=` / `-` | Zoom |
+| `WASD` / arrow keys | Pan |
+| `C` | Follow the player again |
+| `Double-click` | New waypoint |
+| `Right-click` | Context menu |
 
 ## Installation
 1. Install **Better Than Wolves CE 3.0.x** and the Fabric Loader (0.14.19 or later recommended).

@@ -413,6 +413,11 @@ public final class MapStorage {
 		return scratch;
 	}
 
+	/** Whether region textures carry mipmaps (used when the map is drawn smaller than 1:1). */
+	public static boolean mipmapsSupported() {
+		return mipMode() != 0;
+	}
+
 	private static int mipMode() {
 		if (mipMode == -1) {
 			int mode = 0;

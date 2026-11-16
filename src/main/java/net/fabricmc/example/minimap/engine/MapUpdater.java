@@ -16,7 +16,7 @@ import java.util.Map;
  * only those, a few per frame within a time budget, nearest to the player first.
  */
 public final class MapUpdater implements IWorldAccess {
-	private static final int PICK = 12;
+	private static final int PICK = 32;
 	private static final int BLOCK_CHANGE_DELAY_TICKS = 3;
 	private static final int CHUNK_LOAD_DELAY_TICKS = 1;
 	private static final int RETRY_DELAY_TICKS = 2;

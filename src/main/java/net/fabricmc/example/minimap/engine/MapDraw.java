@@ -74,6 +74,9 @@ public final class MapDraw {
 		double nearest = Math.rint(realScale);
 		boolean pixelAligned = rotation == 0.0 && nearest >= 1.0 && Math.abs(realScale - nearest) < 0.001;
 		int magFilter = (realScale >= 1.99 || pixelAligned) ? GL11.GL_NEAREST : GL11.GL_LINEAR;
+		// Mipmaps only when actually shrinking; at 1:1 and above sample the full-resolution level directly.
+		int minFilter = realScale >= 0.999 ? magFilter
+				: (MapStorage.mipmapsSupported() ? GL11.GL_LINEAR_MIPMAP_LINEAR : GL11.GL_LINEAR);
 
 		GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
 		GL11.glColor4f(alpha, alpha, alpha, alpha);
@@ -116,8 +119,10 @@ public final class MapDraw {
 					continue;
 
 				GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
-				if (fullRes)
+				if (fullRes) {
 					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, magFilter);
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, minFilter);
+				}
 
 				double[] px = CLIP.outX, pz = CLIP.outZ;
 				t.startDrawing(GL11.GL_TRIANGLE_FAN);
