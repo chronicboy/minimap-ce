@@ -23,6 +23,10 @@ public final class MapEngine {
 	private static final long FRAME_BUDGET_NANOS = 1200000L;
 	private static final long TICK_BUDGET_NANOS = 3000000L;
 	private static final int INITIAL_SCAN_RADIUS = 16;
+	private static final int RESCAN_RADIUS = 24;
+	/** Ticks after entering a world at which everything around the player is queued once more. */
+	private static final int FIRST_RESCAN_TICK = 40;
+	private static final int SECOND_RESCAN_TICK = 200;
 
 	private World world;
 	private String worldId = "";
@@ -31,6 +35,7 @@ public final class MapEngine {
 	private int framesSinceTick;
 	private int colorGeneration = 0;
 	private int tickCounter;
+	private int ticksInWorld;
 
 	private MapEngine() {
 	}
@@ -66,6 +71,13 @@ public final class MapEngine {
 		try {
 			storage.tick();
 			updater.tick(player);
+
+			// Chunks can arrive in the same network batch as the login, before the listener exists and
+			// before the player's real position is known. Two late scans catch whatever that missed;
+			// chunks that are already up to date cost a comparison and nothing else.
+			ticksInWorld++;
+			if (ticksInWorld == FIRST_RESCAN_TICK || ticksInWorld == SECOND_RESCAN_TICK)
+				updater.markAround(chunkCoord(player.posX), chunkCoord(player.posZ), RESCAN_RADIUS);
 
 			int generation = BlockColors.generation();
 			if (generation != colorGeneration) {
@@ -118,6 +130,7 @@ public final class MapEngine {
 			System.out.println("[Minimap CE] Map storage opened for " + id);
 		}
 		world = w;
+		ticksInWorld = 0;
 
 		int dim = w.provider.dimensionId;
 		boolean caveMode = dim == -1 || (w.provider.hasNoSky && dim != 1);
