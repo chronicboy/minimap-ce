@@ -14,9 +14,9 @@ import java.util.HashMap;
  * In-game settings for Minimap CE, reachable from the fullscreen map, the
  * waypoint list, or the settings key (O).
  *
- * Three tabs keep each page short enough for the smallest window. The minimap
- * is drawn live on top of the screen, so every change is visible immediately,
- * and hovering an option explains it at the bottom.
+ * One card with three tabs. The real minimap is drawn live behind it, so every
+ * change shows straight away; the card moves aside so it does not cover the
+ * minimap when there is room. Hovering an option explains it.
  */
 public class GuiMapSettings extends GuiScreen {
 	private static final int PAGE_MINIMAP = 0;
@@ -51,6 +51,13 @@ public class GuiMapSettings extends GuiScreen {
 	private static final int SIZE_STEP = 8;
 	private static final float MIN_OPACITY = 0.25f;
 
+	private static final int COLUMN_W = 150;
+	private static final int PAD = 8;
+	private static final int PANEL_W = COLUMN_W * 2 + PAD * 3;
+	private static final int ROW_H = 20;
+	private static final int TAB_H = 18;
+	private static final int HELP_H = 24;
+
 	/** Which tab was open last, for the rest of the game session. */
 	private static int lastPage = PAGE_MINIMAP;
 
@@ -58,6 +65,8 @@ public class GuiMapSettings extends GuiScreen {
 	private final HashMap<Integer, String> help = new HashMap<Integer, String>();
 	private int page = lastPage;
 	private int guiScale = 1;
+	private int panelX, panelY, panelH, rowsBottom;
+	private boolean relayoutPending;
 
 	public GuiMapSettings(GuiScreen parent) {
 		this.parent = parent;
@@ -69,33 +78,32 @@ public class GuiMapSettings extends GuiScreen {
 		final MapConfig cfg = MapConfig.instance;
 		guiScale = Math.max(1, new ScaledResolution(mc.gameSettings, mc.displayWidth, mc.displayHeight).getScaleFactor());
 		help.clear();
+		relayoutPending = false;
 
-		int centerX = this.width / 2;
 		boolean roomy = this.height >= 270;
+		int rowStep = roomy ? ROW_H + 4 : ROW_H + 2;
+		panelH = PAD + TAB_H + PAD + 5 * rowStep - (rowStep - ROW_H) + PAD + HELP_H + PAD;
+		panelY = Math.max(16, (this.height - panelH - 26 + 10) / 2);
+		panelX = choosePanelX();
 
-		// Tabs: the open one is shown as a disabled (dark) button.
-		int tabW = 100, tabGap = 4, tabY = roomy ? 26 : 18;
-		int tabX = centerX - (tabW * 3 + tabGap * 2) / 2;
+		int tabW = (PANEL_W - PAD * 2 - 4) / 3;
 		for (int i = 0; i < PAGE_NAMES.length; i++) {
-			GuiButton tab = new GuiButton(BTN_TAB_FIRST + i, tabX + i * (tabW + tabGap), tabY, tabW, 20, PAGE_NAMES[i]);
-			tab.enabled = i != page;
-			this.buttonList.add(tab);
+			this.buttonList.add(new FlatButton(BTN_TAB_FIRST + i, panelX + PAD + i * (tabW + 2), panelY + PAD, tabW,
+					TAB_H, PAGE_NAMES[i]).style(MapUi.STYLE_TAB).selected(i == page));
 		}
 
-		int w = 150, h = 20;
-		int left = centerX - w - 5, right = centerX + 5;
-		int gap = roomy ? 24 : 22;
-		int y = tabY + (roomy ? 32 : 26);
+		int left = panelX + PAD, right = panelX + PAD * 2 + COLUMN_W;
+		int y = panelY + PAD + TAB_H + PAD + 2;
 
 		if (page == PAGE_MINIMAP) {
-			add(BTN_MINIMAP_ENABLED, left, y, w, h, "Show or hide the minimap. Mapping carries on either way.");
-			add(BTN_POSITION, right, y, w, h, "Which corner of the screen the minimap sits in.");
-			y += gap;
-			add(BTN_SHAPE, left, y, w, h, "Round or square minimap.");
-			add(BTN_ROTATE, right, y, w, h,
-					"North Up keeps north at the top. Follows Player turns the map so the way you face is up.");
-			y += gap;
-			this.buttonList.add(new MapSlider(BTN_SIZE, left, y, w, h) {
+			add(BTN_MINIMAP_ENABLED, left, y, "Show or hide the minimap. Mapping carries on either way.");
+			add(BTN_POSITION, right, y, "Which corner of the screen the minimap sits in.");
+			y += rowStep;
+			add(BTN_SHAPE, left, y, "Round or square minimap.");
+			add(BTN_ROTATE, right, y,
+					"North Up keeps north at the top. Follows You turns the map so the way you face is up.");
+			y += rowStep;
+			this.buttonList.add(new MapSlider(BTN_SIZE, left, y, COLUMN_W, ROW_H) {
 				@Override
 				protected float position() {
 					return (cfg.minimapSize - 64) / (float) (MapConfig.MAX_SIZE - 64);
@@ -108,20 +116,26 @@ public class GuiMapSettings extends GuiScreen {
 				}
 
 				@Override
-				protected String label() {
-					return "Size: " + cfg.minimapSize;
+				protected String name() {
+					return "Size";
+				}
+
+				@Override
+				protected String valueText() {
+					return String.valueOf(cfg.minimapSize);
 				}
 
 				@Override
 				protected void released() {
 					cfg.saveConfig();
+					relayoutPending = true; // a bigger minimap may now be in the card's way
 				}
 			});
-			help.put(BTN_SIZE, "Minimap size in GUI pixels. The info text shrinks with small maps.");
-			this.buttonList.add(new MapSlider(BTN_ZOOM, right, y, w, h) {
+			help.put(BTN_SIZE, "Minimap size. The text around it shrinks with small maps.");
+			this.buttonList.add(new MapSlider(BTN_ZOOM, right, y, COLUMN_W, ROW_H) {
 				@Override
 				protected float position() {
-					// Slider runs from zoomed out (left) to zoomed in (right).
+					// Zoomed out on the left, zoomed in on the right.
 					return (MapConfig.MAX_ZOOM - cfg.zoomLevel) / (float) (MapConfig.MAX_ZOOM - MapConfig.MIN_ZOOM);
 				}
 
@@ -132,8 +146,13 @@ public class GuiMapSettings extends GuiScreen {
 				}
 
 				@Override
-				protected String label() {
-					return "Zoom: " + zoomLabel(cfg.zoomLevel);
+				protected String name() {
+					return "Zoom";
+				}
+
+				@Override
+				protected String valueText() {
+					return zoomLabel(cfg.zoomLevel);
 				}
 
 				@Override
@@ -142,8 +161,8 @@ public class GuiMapSettings extends GuiScreen {
 				}
 			});
 			help.put(BTN_ZOOM, "How much ground the minimap shows. Also on the zoom keys (= and - by default).");
-			y += gap;
-			this.buttonList.add(new MapSlider(BTN_OPACITY, left, y, w, h) {
+			y += rowStep;
+			this.buttonList.add(new MapSlider(BTN_OPACITY, left, y, COLUMN_W, ROW_H) {
 				@Override
 				protected float position() {
 					return (cfg.mapOpacity - MIN_OPACITY) / (1.0f - MIN_OPACITY);
@@ -156,8 +175,13 @@ public class GuiMapSettings extends GuiScreen {
 				}
 
 				@Override
-				protected String label() {
-					return "Opacity: " + Math.round(cfg.mapOpacity * 100) + "%";
+				protected String name() {
+					return "Opacity";
+				}
+
+				@Override
+				protected String valueText() {
+					return Math.round(cfg.mapOpacity * 100) + "%";
 				}
 
 				@Override
@@ -166,95 +190,149 @@ public class GuiMapSettings extends GuiScreen {
 				}
 			});
 			help.put(BTN_OPACITY, "Lower values let the world show through the minimap.");
-			add(BTN_PADDING, right, y, w, h, "Extra space between the minimap and the screen edge.");
-			y += gap;
-			add(BTN_CAVE, left, y, w, h,
+			add(BTN_PADDING, right, y, "Extra space between the minimap and the screen edge.");
+			y += rowStep;
+			add(BTN_CAVE, left, y,
 					"When there is rock above you, the minimap shows the caves at your level instead of the surface.");
 		} else if (page == PAGE_MARKERS) {
-			add(BTN_ENTITIES, left, y, w, h, "Mobs and players on the minimap. Hold shows them only while the "
-					+ "player list key is held, so they do not clutter the map; Always keeps them on.");
-			add(BTN_ENTITY_ICONS, right, y, w, h,
-					"Heads shows each mob's face. Arrows shows which way it is looking. Dots is the plainest.");
-			y += gap;
-			add(BTN_WAYPOINTS, left, y, w, h, "Show waypoints on the maps and as beams in the world.");
-			add(BTN_WAYPOINT_ICONS, right, y, w, h,
-					"Letters shows a coloured tile with the waypoint's initial. Squares is the small classic marker.");
-			y += gap;
-			add(BTN_CHUNK_GRID, left, y, w, h, "Draw chunk borders (every 16 blocks) on the maps.");
-			add(BTN_COMPASS, right, y, w, h, "N, E, S and W around the minimap.");
-			y += gap;
-			add(BTN_CLOCK, left, y, w, h, "Day counter and time of day above the minimap.");
-			add(BTN_COORDINATES, right, y, w, h, "Your block position (x, z, y) under the minimap.");
-			y += gap;
-			add(BTN_BIOME, left, y, w, h, "Name of the biome you are standing in.");
+			add(BTN_ENTITIES, left, y, "Show nearby mobs and players on the minimap.");
+			add(BTN_ENTITY_ICONS, right, y, "Dots + Tab Faces: small dots, and each mob's face while you hold the "
+					+ "player list key (Tab). Or always faces, arrows (which way a mob looks) or dots.");
+			y += rowStep;
+			add(BTN_WAYPOINTS, left, y, "Show waypoints on the maps and as beams in the world.");
+			add(BTN_WAYPOINT_ICONS, right, y,
+					"Letters: a coloured tile with the waypoint's initial. Squares: the small classic marker.");
+			y += rowStep;
+			add(BTN_CHUNK_GRID, left, y, "Draw chunk borders (every 16 blocks) on the maps.");
+			add(BTN_COMPASS, right, y, "N, E, S and W around the minimap.");
+			y += rowStep;
+			add(BTN_CLOCK, left, y, "Day counter and time of day above the minimap.");
+			add(BTN_COORDINATES, right, y, "Your block position (x, z, y) under the minimap.");
+			y += rowStep;
+			add(BTN_BIOME, left, y, "Name of the biome you are standing in, with (Caves) while the cave view is on.");
 		} else {
-			add(BTN_PAUSE_GAME, left, y, w, h,
-					"Whether opening the fullscreen map pauses a singleplayer game. Turn off to watch it while travelling.");
-			add(BTN_TELEPORT, right, y, w, h,
+			add(BTN_PAUSE_GAME, left, y,
+					"Whether the fullscreen map pauses a singleplayer game. Turn off to watch it while travelling.");
+			add(BTN_TELEPORT, right, y,
 					"Show teleport options in the waypoint list and the map's right-click menu (needs cheats or op).");
-			y += gap;
-			add(BTN_SHARP, left, y, w, h,
-					"Sharp keeps map blocks crisp at in-between zoom levels and when rotating, with clean edges. "
-							+ "Nearest is the plain fallback if your graphics driver has trouble with it.");
+			y += rowStep;
+			add(BTN_SHARP, left, y, "Sharp keeps map blocks crisp at in-between zoom levels and when rotating, "
+					+ "with clean edges. Nearest is the plain fallback if your graphics driver has trouble with it.");
 		}
+		rowsBottom = y + ROW_H;
 
-		this.buttonList.add(new GuiButton(BTN_DONE, centerX - 100, this.height - 26, 200, 20, "Done"));
+		this.buttonList.add(new FlatButton(BTN_DONE, panelX + (PANEL_W - 120) / 2, panelY + panelH + 6, 120, 20,
+				"Done").style(MapUi.STYLE_PRIMARY));
+	}
+
+	/** Centre the card, unless it would cover the live minimap and there is room beside it. */
+	private int choosePanelX() {
+		int centered = (this.width - PANEL_W) / 2;
+		MapConfig cfg = MapConfig.instance;
+		if (this.mc.theWorld == null || !cfg.minimapEnabled || page == PAGE_WORLD_MAP)
+			return centered;
+		int mapW = cfg.minimapSize + 24;
+		boolean mapOnRight = cfg.minimapPosition == 1 || cfg.minimapPosition == 3;
+		boolean overlap = mapOnRight ? centered + PANEL_W > this.width - mapW : centered < mapW;
+		int free = this.width - mapW;
+		if (!overlap || free < PANEL_W + 8)
+			return centered;
+		int inFree = (free - PANEL_W) / 2;
+		return mapOnRight ? inFree : mapW + inFree;
 	}
 
 	@SuppressWarnings("unchecked")
-	private void add(int id, int x, int y, int w, int h, String description) {
-		this.buttonList.add(new GuiButton(id, x, y, w, h, label(id)));
+	private void add(int id, int x, int y, String description) {
+		this.buttonList.add(new FlatButton(id, x, y, COLUMN_W, ROW_H, name(id)).value(value(id)));
 		help.put(id, description);
 	}
 
-	private static String label(int id) {
+	private static String name(int id) {
+		switch (id) {
+			case BTN_MINIMAP_ENABLED:
+				return "Minimap";
+			case BTN_POSITION:
+				return "Position";
+			case BTN_SHAPE:
+				return "Shape";
+			case BTN_ROTATE:
+				return "Rotation";
+			case BTN_PADDING:
+				return "Padding";
+			case BTN_CAVE:
+				return "Cave Mode";
+			case BTN_ENTITIES:
+				return "Entity Radar";
+			case BTN_ENTITY_ICONS:
+				return "Mobs";
+			case BTN_WAYPOINTS:
+				return "Waypoints";
+			case BTN_WAYPOINT_ICONS:
+				return "Waypoint Icons";
+			case BTN_CHUNK_GRID:
+				return "Chunk Grid";
+			case BTN_COMPASS:
+				return "Compass";
+			case BTN_CLOCK:
+				return "Clock";
+			case BTN_COORDINATES:
+				return "Coordinates";
+			case BTN_BIOME:
+				return "Biome";
+			case BTN_TELEPORT:
+				return "Teleport";
+			case BTN_PAUSE_GAME:
+				return "Map Pauses Game";
+			case BTN_SHARP:
+				return "Map Pixels";
+			default:
+				return "";
+		}
+	}
+
+	private static String value(int id) {
 		MapConfig cfg = MapConfig.instance;
 		switch (id) {
 			case BTN_MINIMAP_ENABLED:
-				return toggle("Minimap", cfg.minimapEnabled);
+				return onOff(cfg.minimapEnabled);
 			case BTN_POSITION: {
-				String[] positions = { "Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right" };
-				return "Position: " + positions[Math.max(0, Math.min(3, cfg.minimapPosition))];
+				String[] positions = { "Top Left", "Top Right", "Bottom Left", "Bottom Right" };
+				return positions[Math.max(0, Math.min(3, cfg.minimapPosition))];
 			}
 			case BTN_SHAPE:
-				return "Shape: " + (cfg.minimapShape == MapConfig.SHAPE_CIRCLE ? "Circle" : "Square");
+				return cfg.minimapShape == MapConfig.SHAPE_CIRCLE ? "Circle" : "Square";
 			case BTN_ROTATE:
-				return "Rotation: " + (cfg.rotateMinimap ? "Follows Player" : "North Up");
+				return cfg.rotateMinimap ? "Follows You" : "North Up";
 			case BTN_PADDING:
-				return toggle("Padding", cfg.useMinimapPadding);
-			case BTN_ENTITIES: {
-				if (!cfg.showEntities)
-					return "Entity Radar: \u00a7cOFF";
-				if (cfg.entityRadarMode == MapConfig.RADAR_ALWAYS)
-					return "Entity Radar: \u00a7aAlways";
-				return "Entity Radar: \u00a7eHold " + holdKeyName();
-			}
+				return onOff(cfg.useMinimapPadding);
+			case BTN_CAVE:
+				return cfg.caveMode ? "§aAuto" : "§cOff";
+			case BTN_ENTITIES:
+				return onOff(cfg.showEntities);
 			case BTN_ENTITY_ICONS: {
-				String[] styles = { "Heads", "Arrows", "Dots" };
-				return "Entity Icons: " + styles[Math.max(0, Math.min(2, cfg.entityIconStyle))];
+				String[] styles = { "Faces", "Arrows", "Dots", "Dots + Tab Faces" };
+				return styles[Math.max(0, Math.min(3, cfg.entityIconStyle))];
 			}
 			case BTN_WAYPOINTS:
-				return toggle("Waypoints", cfg.showWaypoints);
+				return onOff(cfg.showWaypoints);
 			case BTN_WAYPOINT_ICONS:
-				return "Waypoint Icons: " + (cfg.waypointIconStyle == MapConfig.WAYPOINT_LETTERS ? "Letters" : "Squares");
+				return cfg.waypointIconStyle == MapConfig.WAYPOINT_LETTERS ? "Letters" : "Squares";
 			case BTN_CHUNK_GRID:
-				return toggle("Chunk Grid", cfg.showChunkGrid);
+				return onOff(cfg.showChunkGrid);
 			case BTN_COMPASS:
-				return toggle("Compass", cfg.showCompass);
+				return onOff(cfg.showCompass);
 			case BTN_CLOCK:
-				return toggle("Clock", cfg.showClock);
+				return onOff(cfg.showClock);
 			case BTN_COORDINATES:
-				return toggle("Coordinates", cfg.showCoordinates);
+				return onOff(cfg.showCoordinates);
 			case BTN_BIOME:
-				return toggle("Biome", cfg.showBiome);
+				return onOff(cfg.showBiome);
 			case BTN_TELEPORT:
-				return toggle("Teleport Options", cfg.showTeleportButton);
-			case BTN_CAVE:
-				return "Cave Mode: " + (cfg.caveMode ? "\u00a7aAuto" : "\u00a7cOff");
-			case BTN_SHARP:
-				return "Map Pixels: " + (cfg.sharpScaling ? "Sharp" : "Nearest");
+				return onOff(cfg.showTeleportButton);
 			case BTN_PAUSE_GAME:
-				return toggle("Map Pauses Game", cfg.fullscreenMapPausesGame);
+				return onOff(cfg.fullscreenMapPausesGame);
+			case BTN_SHARP:
+				return cfg.sharpScaling ? "Sharp" : "Nearest";
 			default:
 				return "";
 		}
@@ -268,19 +346,21 @@ public class GuiMapSettings extends GuiScreen {
 
 		if (button.id >= BTN_TAB_FIRST && button.id < BTN_TAB_FIRST + PAGE_NAMES.length) {
 			page = lastPage = button.id - BTN_TAB_FIRST;
-			this.buttonList.clear();
-			this.initGui();
+			rebuild();
 			return;
 		}
 
-		// Hold shift to step backwards through options with more than two values.
+		// Shift-click steps backwards through options with more than two values.
 		boolean back = isShiftKeyDown();
+		boolean relayout = false;
 		switch (button.id) {
 			case BTN_MINIMAP_ENABLED:
 				cfg.minimapEnabled = !cfg.minimapEnabled;
+				relayout = true;
 				break;
 			case BTN_POSITION:
 				cfg.minimapPosition = (cfg.minimapPosition + (back ? 3 : 1)) % 4;
+				relayout = true;
 				break;
 			case BTN_SHAPE:
 				cfg.minimapShape = cfg.minimapShape == MapConfig.SHAPE_CIRCLE ? MapConfig.SHAPE_SQUARE
@@ -292,18 +372,23 @@ public class GuiMapSettings extends GuiScreen {
 			case BTN_PADDING:
 				cfg.useMinimapPadding = !cfg.useMinimapPadding;
 				break;
-			case BTN_ENTITIES: {
-				// Cycle Hold -> Always -> Off (shift: the other way).
-				int state = !cfg.showEntities ? 2 : (cfg.entityRadarMode == MapConfig.RADAR_ALWAYS ? 1 : 0);
-				state = (state + (back ? 2 : 1)) % 3;
-				cfg.showEntities = state != 2;
-				if (state != 2)
-					cfg.entityRadarMode = state == 1 ? MapConfig.RADAR_ALWAYS : MapConfig.RADAR_HOLD_KEY;
+			case BTN_CAVE:
+				cfg.caveMode = !cfg.caveMode;
+				break;
+			case BTN_ENTITIES:
+				cfg.showEntities = !cfg.showEntities;
+				break;
+			case BTN_ENTITY_ICONS: {
+				// Order on screen: Dots + Tab Faces, Faces, Arrows, Dots.
+				int[] order = { MapConfig.ENTITY_DOTS_FACES_ON_TAB, MapConfig.ENTITY_HEADS, MapConfig.ENTITY_ARROWS,
+						MapConfig.ENTITY_DOTS };
+				int index = 0;
+				for (int i = 0; i < order.length; i++)
+					if (order[i] == cfg.entityIconStyle)
+						index = i;
+				cfg.entityIconStyle = order[(index + (back ? order.length - 1 : 1)) % order.length];
 				break;
 			}
-			case BTN_ENTITY_ICONS:
-				cfg.entityIconStyle = (cfg.entityIconStyle + (back ? 2 : 1)) % 3;
-				break;
 			case BTN_WAYPOINTS:
 				cfg.showWaypoints = !cfg.showWaypoints;
 				break;
@@ -329,14 +414,11 @@ public class GuiMapSettings extends GuiScreen {
 			case BTN_TELEPORT:
 				cfg.showTeleportButton = !cfg.showTeleportButton;
 				break;
-			case BTN_CAVE:
-				cfg.caveMode = !cfg.caveMode;
+			case BTN_PAUSE_GAME:
+				cfg.fullscreenMapPausesGame = !cfg.fullscreenMapPausesGame;
 				break;
 			case BTN_SHARP:
 				cfg.sharpScaling = !cfg.sharpScaling;
-				break;
-			case BTN_PAUSE_GAME:
-				cfg.fullscreenMapPausesGame = !cfg.fullscreenMapPausesGame;
 				break;
 			case BTN_DONE:
 				close();
@@ -344,8 +426,16 @@ public class GuiMapSettings extends GuiScreen {
 			default:
 				return;
 		}
-		button.displayString = label(button.id);
 		cfg.saveConfig();
+		if (relayout)
+			rebuild();
+		else if (button instanceof FlatButton)
+			((FlatButton) button).value = value(button.id);
+	}
+
+	private void rebuild() {
+		this.buttonList.clear();
+		this.initGui();
 	}
 
 	private void close() {
@@ -366,32 +456,40 @@ public class GuiMapSettings extends GuiScreen {
 
 	@Override
 	public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+		// After the size slider is let go, move the card if the minimap grew into its way.
+		if (relayoutPending && (!org.lwjgl.input.Mouse.isCreated() || !org.lwjgl.input.Mouse.isButtonDown(0)))
+			rebuild();
 		boolean inWorld = this.mc.theWorld != null && this.mc.thePlayer != null;
 		if (inWorld) {
 			// Lighter than the usual menu backdrop, so the world and the live minimap stay readable.
-			this.drawGradientRect(0, 0, this.width, this.height, 0x8C101010, 0xA0101010);
+			this.drawGradientRect(0, 0, this.width, this.height, 0x80101010, 0x98101010);
 			if (page != PAGE_WORLD_MAP)
 				drawLiveMinimap(partialTicks);
 		} else {
 			this.drawDefaultBackground();
 		}
 
-		boolean roomy = this.height >= 270;
-		this.drawCenteredString(this.fontRenderer, "\u00a7lMap Settings", this.width / 2, roomy ? 10 : 5, 0xFFFFFF);
+		MapUi.panel(panelX, panelY, panelX + PANEL_W, panelY + panelH);
+		String title = "§lMap Settings";
+		this.fontRenderer.drawStringWithShadow(title, panelX + (PANEL_W - this.fontRenderer.getStringWidth(title)) / 2,
+				panelY - 12, 0xFFFFFF);
+		MapUi.rect(panelX + PAD, panelY + PAD + TAB_H + 3, panelX + PANEL_W - PAD, panelY + PAD + TAB_H + 4,
+				MapUi.BORDER);
 
 		if (page == PAGE_WORLD_MAP) {
-			int y = (roomy ? 26 : 18) + (roomy ? 32 : 26) + (roomy ? 24 : 22) + 30;
-			this.drawCenteredString(this.fontRenderer, "\u00a77Teleport command: \u00a7f" + MapConfig.instance.teleportCommand,
-					this.width / 2, y, 0xFFFFFF);
-			this.drawCenteredString(this.fontRenderer, "\u00a78Change it in config/minimap-ce.conf. {x} {y} {z} {dim} {name} are filled in.",
-					this.width / 2, y + 12, 0xFFFFFF);
-			this.drawCenteredString(this.fontRenderer, "\u00a78Keys are set under Options > Controls, all starting with [Minimap].",
-					this.width / 2, y + 30, 0xFFFFFF);
+			int y = rowsBottom + 12;
+			int x = panelX + PAD + 2;
+			this.fontRenderer.drawStringWithShadow("Teleport command", x, y, MapUi.TEXT_DIM);
+			String cmd = MapUi.fit(this.fontRenderer, MapConfig.instance.teleportCommand, PANEL_W - PAD * 2 - 104);
+			this.fontRenderer.drawStringWithShadow(cmd, x + 100, y, 0xFFFFFF);
+			this.fontRenderer.drawStringWithShadow("Change it in config/minimap-ce.conf", x, y + 12, MapUi.TEXT_MUTED);
+			this.fontRenderer.drawStringWithShadow("Keys: Options > Controls, all start with [Minimap]", x, y + 24,
+					MapUi.TEXT_MUTED);
 		}
 
 		super.drawScreen(mouseX, mouseY, partialTicks);
 
-		// Explain whatever the mouse is over.
+		// Explain whatever the mouse is over, in the strip at the bottom of the card.
 		String text = null;
 		for (Object o : this.buttonList) {
 			GuiButton b = (GuiButton) o;
@@ -402,20 +500,19 @@ public class GuiMapSettings extends GuiScreen {
 			}
 		}
 		if (text == null && page != PAGE_WORLD_MAP)
-			text = "\u00a78Changes show on the minimap straight away. Shift-click steps backwards.";
-		if (text != null) {
-			int boxW = Math.min(this.width - 20, 320);
-			int lines = this.fontRenderer.listFormattedStringToWidth(text, boxW).size();
-			int top = this.height - 32 - lines * 9;
-			this.fontRenderer.drawSplitString(text, (this.width - boxW) / 2, top, boxW, 0xC8C8C8);
-		}
+			text = "Hover an option to see what it does. Changes show on the minimap straight away; shift-click "
+					+ "steps backwards.";
+		int stripTop = panelY + panelH - PAD - HELP_H;
+		MapUi.rect(panelX + PAD, stripTop - 4, panelX + PANEL_W - PAD, stripTop - 3, MapUi.BORDER);
+		if (text != null)
+			this.fontRenderer.drawSplitString(text, panelX + PAD + 2, stripTop + 2, PANEL_W - PAD * 2 - 4,
+					MapUi.TEXT_DIM & 0xFFFFFF);
 	}
 
 	/** Draws the real minimap over the dimmed backdrop as a live preview. */
 	private void drawLiveMinimap(float partialTicks) {
 		int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
 		try {
-			BTWNavigator.minimapRenderer.setPreview(true);
 			BTWNavigator.minimapRenderer.renderMinimap(this.mc, this.mc.theWorld, this.mc.thePlayer, this.width,
 					this.height, guiScale, partialTicks);
 		} catch (Throwable t) {
@@ -424,28 +521,13 @@ public class GuiMapSettings extends GuiScreen {
 			} catch (Throwable ignored) {
 			}
 		} finally {
-			BTWNavigator.minimapRenderer.setPreview(false);
 			GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
 			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 		}
 	}
 
-	/** Name of the player-list key (Tab unless rebound), e.g. "Tab". */
-	private static String holdKeyName() {
-		try {
-			String name = Keyboard.getKeyName(
-					net.minecraft.src.Minecraft.getMinecraft().gameSettings.keyBindPlayerList.keyCode);
-			if (name != null && name.length() > 1)
-				return name.charAt(0) + name.substring(1).toLowerCase();
-			if (name != null)
-				return name;
-		} catch (Throwable ignored) {
-		}
-		return "Tab";
-	}
-
-	private static String toggle(String name, boolean value) {
-		return name + ": " + (value ? "\u00a7aON" : "\u00a7cOFF");
+	private static String onOff(boolean value) {
+		return value ? "§aON" : "§cOFF";
 	}
 
 	private static String zoomLabel(int zoomLevel) {

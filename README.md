@@ -8,7 +8,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 ### Minimap
 - **Texture-sampled block colors** — reads Minecraft's terrain atlas for accurate colors per block variant, and follows your resource pack.
 - **Topographic shading** — slope-based lighting for terrain depth, with water that darkens as it gets deeper.
-- **Biome tinting** for grass, leaves, vines and water.
+- **Biome tinting** for grass, leaves, vines and water, blended smoothly across biome borders like the game itself does.
 - **Circular or square map** with a beveled frame and compass labels (N/E/S/W).
 - **North-up or rotating** — optionally keep the way you are facing at the top.
 - **Zoom** — five levels from 4x to 1/4x.
@@ -25,13 +25,14 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Underground layers** — caves you explore are saved in 16-block height layers. Underground, the map opens on your layer; the panel at the top right (or PgUp/PgDn) moves between the surface and every explored layer.
 - **Cross-dimension viewing** — browse the Overworld, Nether and End maps from tabs without travelling there.
 - **Right-click menu** — create, edit, hide or delete waypoints, teleport, or re-center on yourself.
-- **Cursor readout** — coordinates and ground height under the mouse.
+- **Cursor readout** — coordinates and ground height under the mouse, plus a distance ruler in the corner.
 - **Unpaused journeys** — optionally leave the game running while the map is open.
 
 ### Waypoints
 - **Lettered tiles** — each waypoint is a colored tile with its initial, on both maps. A small plain-square style is available if you prefer less clutter.
-- **Hoverable labels** — names and coordinates appear when you hover a waypoint on the full-screen map.
-- **Add / edit / delete**, pick from nine colors, toggle individually or all at once.
+- **Hoverable labels** — name, coordinates and distance appear when you hover a waypoint on the full-screen map.
+- **Waypoint list** — every waypoint with its distance from you; click a row to edit it, hide or show one or all, and deleting asks for a second click.
+- **Waypoint editor** — 16 colors, a live preview of the tile, a Here button that fills in where you stand (converted for the Nether), and it will not save coordinates that are not numbers.
 - **Quick waypoint** — one key drops a waypoint where you stand.
 - **Cross-dimension waypoint list** — manage waypoints for any dimension from the waypoint screen.
 - **Death waypoints** — saved automatically and numbered (Death, Death 2, ...).
@@ -41,9 +42,10 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Per-world saving** — separate lists for every singleplayer world and multiplayer server.
 
 ### Entity Radar
-- **Hold Tab to show** — mobs appear while you hold the player list key (Tab), so they never clutter the map; set Entity Radar to Always to keep them on.
-- **Mob heads** — nearby mobs and players show their own face, cut from their skin, so it follows resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one, horses included.
-- **Arrows or dots** if you prefer — color coded (red hostile, green passive animals and villagers, blue players, yellow anything else), and arrows point where the mob is looking.
+- **Dots, faces on Tab** — like Xaero's: nearby mobs are small color-coded dots (red hostile, green passive animals and villagers, blue players, yellow anything else), and holding the player list key (Tab) shows each one's face.
+- **Mob faces** — cut from the mob's own skin, so they follow resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one; horses, donkeys and mules get a side profile.
+- **Depth at a glance** — mobs well above or below you are drawn darker.
+- **Other styles** — always faces, arrows that point where each mob is looking, or plain dots.
 - Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
 
 ### Info HUD
@@ -60,7 +62,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 | `B` | Open waypoint manager |
 | `N` | New waypoint where you stand |
 | `M` | Toggle minimap |
-| `Tab` (hold) | Show mobs on the minimap (when Entity Radar is set to Hold) |
+| `Tab` (hold) | Show mob faces on the minimap instead of dots |
 | `F` | Toggle entity radar |
 | `=` / `-` | Zoom minimap in / out (numpad +/- also work) |
 | `]` | Increase minimap size |
@@ -85,7 +87,7 @@ On the full-screen map:
 Press `O` in game. The minimap stays visible behind the screen and updates as you change things; hover an option for an explanation.
 
 - **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding, cave mode.
-- **Markers & Info** — entity radar (Hold Tab, Always or Off) and its icon style, waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
+- **Markers & Info** — entity radar and its icon style (Dots + Tab Faces, Faces, Arrows or Dots), waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
 - **World Map** — whether the full-screen map pauses the game, whether teleport options are shown, and map pixel scaling (Sharp, or Nearest if your graphics driver has trouble with Sharp).
 
 ## Configuration
@@ -108,7 +110,7 @@ teleportCommand="/tp {x} {y} {z}"
 ## Upgrading from 3.x
 - Your waypoints, settings and explored maps carry over. Old map data in `config/minimap-ce-maps-v3/` is imported as you look at it and is never changed, so you can go back to a 3.x jar and still have your old map.
 - Areas explored with 3.x keep their old colors until you visit them again.
-- The entity radar shows mob heads, only while Tab is held, and waypoints show lettered tiles by default; the 3.x look (always-on arrows, small squares) is a few clicks away in the settings.
+- The entity radar shows dots, with faces while Tab is held, and waypoints show lettered tiles by default; the 3.x look (arrows, small squares) is a few clicks away in the settings.
 
 ## Installation
 1. Install **Better Than Wolves CE 3.0.0 or later** with Fabric Loader 0.14.19 or later.

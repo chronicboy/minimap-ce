@@ -57,6 +57,7 @@ public class MinimapRenderer {
 	private final EntityIcons.Head[] headIcon = new EntityIcons.Head[MAX_ENTITIES];
 	private final double[] headX = new double[MAX_ENTITIES];
 	private final double[] headY = new double[MAX_ENTITIES];
+	private final float[] headShade = new float[MAX_ENTITIES];
 	private int headCount;
 	private int iconGeneration = -1;
 
@@ -69,20 +70,19 @@ public class MinimapRenderer {
 	private int lastCoordX = Integer.MIN_VALUE, lastCoordY = Integer.MIN_VALUE, lastCoordZ = Integer.MIN_VALUE;
 	private BiomeGenBase lastBiome = null;
 
-	/** True while the settings screen draws the minimap as a preview: show everything there is to see. */
-	private boolean preview;
-
-	public void setPreview(boolean preview) {
-		this.preview = preview;
+	/** The radar style for this frame: the default shows dots, and faces while Tab is held. */
+	private static int radarStyle(Minecraft mc) {
+		int style = MapConfig.instance.entityIconStyle;
+		if (style != MapConfig.ENTITY_DOTS_FACES_ON_TAB)
+			return style;
+		boolean tab = mc.gameSettings != null && mc.gameSettings.keyBindPlayerList.pressed;
+		return tab ? MapConfig.ENTITY_HEADS : MapConfig.ENTITY_DOTS;
 	}
 
-	/** Whether mobs are shown right now (radar on, and Tab held unless it is set to always show). */
-	private boolean radarVisible(Minecraft mc) {
-		MapConfig cfg = MapConfig.instance;
-		if (!cfg.showEntities)
-			return false;
-		return preview || cfg.entityRadarMode == MapConfig.RADAR_ALWAYS
-				|| (mc.gameSettings != null && mc.gameSettings.keyBindPlayerList.pressed);
+	/** Mobs far above or below are drawn darker, so the radar shows depth at a glance. */
+	private static float heightShade(double dy) {
+		double d = Math.abs(dy) - 3.0;
+		return d <= 0 ? 1.0f : (float) Math.max(0.45, 1.0 - d * 0.035);
 	}
 
 	public void renderMinimap(Minecraft mc, World world, EntityPlayer player, int screenWidth, int screenHeight,
@@ -207,8 +207,8 @@ public class MinimapRenderer {
 			EntityIcons.clearCache();
 		}
 		t.startDrawing(GL11.GL_TRIANGLES);
-		if (radarVisible(mc))
-			addEntityMarkers(t, world, player, partialTicks);
+		if (cfg.showEntities)
+			addEntityMarkers(t, world, player, partialTicks, radarStyle(mc));
 		if (cfg.showSpawnWaypoint && SpawnTracker.instance.hasSpawn())
 			addSpawnMarker(t, world);
 		if (cfg.showWaypoints)
@@ -220,6 +220,8 @@ public class MinimapRenderer {
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 		GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 		for (int i = 0; i < headCount; i++) {
+			float shade = headShade[i];
+			GL11.glColor4f(shade, shade, shade, 1.0f);
 			EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i]);
 			headTexture[i] = null;
 			headIcon[i] = null;
@@ -436,9 +438,8 @@ public class MinimapRenderer {
 		}
 	}
 
-	private void addEntityMarkers(Tessellator t, World world, EntityPlayer player, float partialTicks) {
+	private void addEntityMarkers(Tessellator t, World world, EntityPlayer player, float partialTicks, int style) {
 		List<?> entities = world.loadedEntityList;
-		int style = MapConfig.instance.entityIconStyle;
 		double reach = (circle ? radius : radius * 1.4143) / viewScale;
 		int count = 0;
 		for (int i = 0, n = entities.size(); i < n && count < MAX_ENTITIES; i++) {
@@ -487,7 +488,9 @@ public class MinimapRenderer {
 
 			if (style == MapConfig.ENTITY_ARROWS) {
 				float eyaw = e.prevRotationYaw + (e.rotationYaw - e.prevRotationYaw) * partialTicks;
-				MapMarkers.entityArrow(t, x, y, Math.toRadians(eyaw + 90.0) + viewRotation, r, g, b);
+				float shade = heightShade(e.posY - player.posY);
+				MapMarkers.entityArrow(t, x, y, Math.toRadians(eyaw + 90.0) + viewRotation, r * shade, g * shade,
+						b * shade);
 				continue;
 			}
 			if (style == MapConfig.ENTITY_HEADS) {
@@ -506,11 +509,13 @@ public class MinimapRenderer {
 					headIcon[headCount] = head;
 					headX[headCount] = left;
 					headY[headCount] = top;
+					headShade[headCount] = heightShade(e.posY - player.posY);
 					headCount++;
 					continue;
 				}
 			}
-			MapMarkers.dot(t, x, y, 2.2, r, g, b);
+			float shade = heightShade(e.posY - player.posY);
+			MapMarkers.dot(t, x, y, 1.8, r * shade, g * shade, b * shade);
 		}
 	}
 

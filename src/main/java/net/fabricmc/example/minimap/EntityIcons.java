@@ -47,25 +47,27 @@ import java.util.HashMap;
  * The layouts are checked against the game's real skins by devtest's HeadSheet.
  */
 final class EntityIcons {
-	/** A face rectangle, in texels of a texture that is {@code unitsWide} texels wide. */
+	/**
+	 * An icon cut from a skin: one or more texture rectangles laid out on a small
+	 * canvas. Coordinates are texels of a texture {@code unitsWide} texels across.
+	 */
 	static final class Head {
 		final float unitsWide;
-		final int x, y, w, h;
-		/** Second layer drawn on top (player hats), or -1. */
-		final int overlayX, overlayY;
+		/** Icon size in texels. */
+		final int w, h;
+		/** One entry per piece, drawn in order: {texX, texY, width, height, iconX, iconY}. */
+		final int[][] parts;
 
-		Head(float unitsWide, int x, int y, int w, int h, int overlayX, int overlayY) {
+		Head(float unitsWide, int w, int h, int[]... parts) {
 			this.unitsWide = unitsWide;
-			this.x = x;
-			this.y = y;
 			this.w = w;
 			this.h = h;
-			this.overlayX = overlayX;
-			this.overlayY = overlayY;
+			this.parts = parts;
 		}
 
+		/** A single face rectangle of a 64-texel-wide skin. */
 		Head(int x, int y, int w, int h) {
-			this(64.0f, x, y, w, h, -1, -1);
+			this(64.0f, w, h, new int[] { x, y, w, h, 0, 0 });
 		}
 	}
 
@@ -76,7 +78,8 @@ final class EntityIcons {
 
 	/** First match wins, so subclasses that need different treatment come before their parents. */
 	private static final Object[][] RULES = {
-			{ EntityPlayer.class, new Head(64.0f, 8, 8, 8, 8, 40, 8) },
+			// Face plus the hat layer of the skin.
+			{ EntityPlayer.class, new Head(64.0f, 8, 8, new int[] { 8, 8, 8, 8, 0, 0 }, new int[] { 40, 8, 8, 8, 0, 0 }) },
 			{ EntityMagmaCube.class, NONE }, // body is built from slices, no single face
 			{ EntitySlime.class, CUBE_HEAD },
 			{ EntityZombie.class, CUBE_HEAD }, // includes zombie pigmen
@@ -94,10 +97,15 @@ final class EntityIcons {
 			{ EntityOcelot.class, new Head(5, 5, 5, 4) },
 			{ EntityVillager.class, new Head(8, 8, 8, 10) },
 			{ EntityWitch.class, new Head(8, 8, 8, 10) },
-			{ EntityIronGolem.class, new Head(128.0f, 8, 8, 8, 10, -1, -1) },
+			{ EntityIronGolem.class, new Head(128.0f, 8, 10, new int[] { 8, 8, 8, 10, 0, 0 }) },
 			{ EntityGhast.class, new Head(16, 16, 16, 16) },
-			// Horses, donkeys and mules: the side of the head (eye and cheek) reads best at this size.
-			{ EntityHorse.class, new Head(0, 20, 7, 5) },
+			// Horses, donkeys and mules have no flat face: a side profile (ear, head with eye, two
+			// muzzle pieces) assembled from the model's parts. In the texture the front is on the right.
+			{ EntityHorse.class, new Head(64.0f, 12, 8,
+					new int[] { 19, 17, 1, 3, 0, 0 },
+					new int[] { 0, 20, 7, 5, 0, 3 },
+					new int[] { 0, 30, 5, 3, 7, 3 },
+					new int[] { 0, 33, 5, 2, 7, 6 }) },
 			{ DireWolfEntity.class, new Head(4, 4, 6, 6) },
 	};
 
@@ -187,13 +195,14 @@ final class EntityIcons {
 		}
 		// The table is in texels of a texture "unitsWide" across; its height follows the real image's shape.
 		double unitsHigh = head.unitsWide * aspect;
-		double right = left + iconWidth(head), bottom = top + iconHeight(head);
+		double u = unit(head);
 
 		t.startDrawingQuads();
-		addFace(t, left, top, right, bottom, head.x, head.y, head.w, head.h, head.unitsWide, unitsHigh);
-		if (head.overlayX >= 0)
-			addFace(t, left, top, right, bottom, head.overlayX, head.overlayY, head.w, head.h, head.unitsWide,
+		for (int[] part : head.parts) {
+			double x0 = left + part[4] * u, y0 = top + part[5] * u;
+			addFace(t, x0, y0, x0 + part[2] * u, y0 + part[3] * u, part[0], part[1], part[2], part[3], head.unitsWide,
 					unitsHigh);
+		}
 		t.draw();
 	}
 
@@ -204,7 +213,7 @@ final class EntityIcons {
 	 */
 	private static double unit(Head head) {
 		int largest = Math.max(head.w, head.h);
-		return largest <= 10 ? 1.0 : 8.0 / largest;
+		return largest <= 12 ? 1.0 : 8.0 / largest;
 	}
 
 	static double iconWidth(Head head) {

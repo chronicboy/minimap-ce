@@ -24,9 +24,8 @@ public class MapConfig {
 	public static final int ENTITY_HEADS = 0;
 	public static final int ENTITY_ARROWS = 1;
 	public static final int ENTITY_DOTS = 2;
-
-	public static final int RADAR_HOLD_KEY = 0;
-	public static final int RADAR_ALWAYS = 1;
+	/** Small dots, faces while the player list key (Tab) is held. */
+	public static final int ENTITY_DOTS_FACES_ON_TAB = 3;
 
 	public static final int WAYPOINT_LETTERS = 0;
 	public static final int WAYPOINT_SQUARES = 1;
@@ -42,10 +41,8 @@ public class MapConfig {
 	public boolean sharpScaling = true;
 	public float mapOpacity = 1.0f;
 	public boolean showEntities = true;
-	/** Radar style: mob faces, direction arrows (3.x look) or plain dots. */
-	public int entityIconStyle = ENTITY_HEADS;
-	/** When the radar is on: only while the player-list key (Tab) is held, or all the time. */
-	public int entityRadarMode = RADAR_HOLD_KEY;
+	/** Radar style: dots with faces on Tab (default), always faces, direction arrows (3.x look) or dots. */
+	public int entityIconStyle = ENTITY_DOTS_FACES_ON_TAB;
 	/** Waypoint style: coloured tile with the name's initial, or the small 3.x square. */
 	public int waypointIconStyle = WAYPOINT_LETTERS;
 	public int zoomLevel = 0;
@@ -132,8 +129,8 @@ public class MapConfig {
 		sharpScaling = getBool(props, "sharpScaling", sharpScaling);
 		mapOpacity = clamp(getFloat(props, "mapOpacity", mapOpacity), 0.25f, 1.0f);
 		showEntities = getBool(props, "showEntities", showEntities);
-		entityIconStyle = clamp(getInt(props, "entityIconStyle", entityIconStyle), 0, 2);
-		entityRadarMode = clamp(getInt(props, "entityRadarMode", entityRadarMode), 0, 1);
+		// Stored under a new name: the previous builds' "entityIconStyle" predates the Tab default.
+		entityIconStyle = clamp(getInt(props, "radarIcons", entityIconStyle), 0, 3);
 		waypointIconStyle = clamp(getInt(props, "waypointIconStyle", waypointIconStyle), 0, 1);
 		zoomLevel = clamp(getInt(props, "zoomLevel", zoomLevel), MIN_ZOOM, MAX_ZOOM);
 		showChunkGrid = getBool(props, "showChunkGrid", showChunkGrid);
@@ -194,8 +191,7 @@ public class MapConfig {
 		props.setProperty("sharpScaling", String.valueOf(sharpScaling));
 		props.setProperty("mapOpacity", String.valueOf(mapOpacity));
 		props.setProperty("showEntities", String.valueOf(showEntities));
-		props.setProperty("entityIconStyle", String.valueOf(entityIconStyle));
-		props.setProperty("entityRadarMode", String.valueOf(entityRadarMode));
+		props.setProperty("radarIcons", String.valueOf(entityIconStyle));
 		props.setProperty("waypointIconStyle", String.valueOf(waypointIconStyle));
 		props.setProperty("zoomLevel", String.valueOf(zoomLevel));
 		props.setProperty("showChunkGrid", String.valueOf(showChunkGrid));

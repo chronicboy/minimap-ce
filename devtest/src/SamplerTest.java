@@ -139,6 +139,21 @@ public class SamplerTest {
         ChunkSampler.sampleCave(chunk, null, out, null, 4000);
         check(true, "extreme reference heights");
 
+        // ---- biome blending: west half biome 1, east half biome 2 -> grass fades across the border
+        biomeTints[1][2] = 0xFF000000 | 0x3060A0;
+        newChunk(); fill(0, 62, STONE); fill(63, 63, GRASS);
+        for (int z = 0; z < 16; z++) for (int x = 8; x < 16; x++) chunk.getBiomeArray()[z << 4 | x] = 2;
+        ChunkSampler.sampleSurface(chunk, null, out);
+        int west = MapShade.pack(MapShade.multiply(0x959595, GRASS_TINT), 63);
+        int east = MapShade.pack(MapShade.multiply(0x959595, 0x3060A0), 63);
+        check(out[5 << 4 | 2] == west, "far west is pure biome 1");
+        check(out[5 << 4 | 13] == east, "far east is pure biome 2");
+        int r6 = (out[5 << 4 | 6] >> 16) & 255, r7 = (out[5 << 4 | 7] >> 16) & 255, r8 = (out[5 << 4 | 8] >> 16) & 255, r9 = (out[5 << 4 | 9] >> 16) & 255;
+        int rW = (west >> 16) & 255, rE = (east >> 16) & 255;
+        check(rW > r6 && r6 > r7 && r7 > r8 && r8 > r9 && r9 > rE, "smooth gradient across the edge: " + rW + " " + r6 + " " + r7 + " " + r8 + " " + r9 + " " + rE);
+        check(out[0] == out[15 << 4], "no neighbours loaded: edges continue the chunk itself");
+        biomeTints[1][2] = 0;
+
         // ---- timing
         newChunk(); fill(0, 62, STONE); fill(63, 63, GRASS);
         for (int i = 0; i < 300; i++) ChunkSampler.sampleSurface(chunk, null, out);

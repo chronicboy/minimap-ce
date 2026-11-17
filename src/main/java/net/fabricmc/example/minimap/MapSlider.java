@@ -2,10 +2,9 @@ package net.fabricmc.example.minimap;
 
 import net.minecraft.src.GuiButton;
 import net.minecraft.src.Minecraft;
-import org.lwjgl.opengl.GL11;
 
 /**
- * A vanilla-looking slider that is not tied to the game's own options enum.
+ * A slider in the {@link MapUi} style that is not tied to the game's options.
  * Subclasses say how a knob position (0..1) maps to a setting; snapping to
  * steps is simply a matter of {@link #position()} reporting the snapped value.
  */
@@ -14,7 +13,6 @@ abstract class MapSlider extends GuiButton {
 
 	MapSlider(int id, int x, int y, int width, int height) {
 		super(id, x, y, width, height, "");
-		this.displayString = label();
 	}
 
 	/** Current knob position, 0..1. */
@@ -23,35 +21,42 @@ abstract class MapSlider extends GuiButton {
 	/** Store the setting for a knob position, 0..1. */
 	protected abstract void apply(float position);
 
-	protected abstract String label();
+	protected abstract String name();
+
+	protected abstract String valueText();
 
 	/** Called when the knob is let go (a good moment to save). */
 	protected void released() {
 	}
 
-	@Override
-	protected int getHoverState(boolean hovered) {
-		return 0; // draws the dark track
-	}
-
 	private void moveTo(int mouseX) {
 		float p = (float) (mouseX - (this.xPosition + 4)) / (float) (this.width - 8);
 		apply(p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p));
-		this.displayString = label();
 	}
 
 	@Override
-	protected void mouseDragged(Minecraft mc, int mouseX, int mouseY) {
+	public void drawButton(Minecraft mc, int mouseX, int mouseY) {
 		if (!this.drawButton)
 			return;
 		if (this.dragging)
 			moveTo(mouseX);
-		GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+		boolean hover = this.dragging || (mouseX >= this.xPosition && mouseY >= this.yPosition
+				&& mouseX < this.xPosition + this.width && mouseY < this.yPosition + this.height);
+		int x = this.xPosition, y = this.yPosition, w = this.width, h = this.height;
+
+		MapUi.rect(x, y, x + w, y + h, hover ? 0xFF2D303A : 0xFF23252D);
 		float p = position();
 		p = p < 0.0f ? 0.0f : (p > 1.0f ? 1.0f : p);
-		int knob = this.xPosition + (int) (p * (float) (this.width - 8));
-		this.drawTexturedModalRect(knob, this.yPosition, 0, 66, 4, 20);
-		this.drawTexturedModalRect(knob + 4, this.yPosition, 196, 66, 4, 20);
+		int knob = x + 2 + Math.round(p * (w - 7));
+		// Filled part of the track up to the knob.
+		MapUi.rect(x + 1, y + 1, knob + 1, y + h - 1, 0x502F64C8);
+		MapUi.outline(x, y, x + w, y + h, hover ? 0xFF5A6072 : 0xFF383B47);
+		MapUi.rect(knob, y + 2, knob + 3, y + h - 2, hover ? 0xFFFFFFFF : 0xFFC9CCD6);
+
+		int ty = y + (h - 8) / 2;
+		String name = name(), value = valueText();
+		mc.fontRenderer.drawStringWithShadow(name, x + 6, ty, MapUi.TEXT_DIM);
+		mc.fontRenderer.drawStringWithShadow(value, x + w - 6 - mc.fontRenderer.getStringWidth(value), ty, 0xFFFFFFFF);
 	}
 
 	@Override

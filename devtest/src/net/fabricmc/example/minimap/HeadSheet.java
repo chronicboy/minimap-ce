@@ -74,12 +74,12 @@ public class HeadSheet {
                     if (skin == null || head == null) continue;
                     // Same maths as EntityIcons.drawHead: table units -> real texels through the image's own shape.
                     double unitsHigh = head.unitsWide * skin.getHeight() / (double) skin.getWidth();
-                    BufferedImage face = cut(skin, head.x, head.y, head.w, head.h, head.unitsWide, unitsHigh);
-                    if (head.overlayX >= 0) {
-                        Graphics2D g = face.createGraphics();
-                        g.drawImage(cut(skin, head.overlayX, head.overlayY, head.w, head.h, head.unitsWide, unitsHigh), 0, 0, null);
-                        g.dispose();
-                    }
+                    double sx = skin.getWidth() / head.unitsWide, sy = skin.getHeight() / unitsHigh;
+                    BufferedImage face = new BufferedImage(Math.max(1, (int) Math.round(head.w * sx)), Math.max(1, (int) Math.round(head.h * sy)), BufferedImage.TYPE_INT_ARGB);
+                    Graphics2D fg = face.createGraphics();
+                    for (int[] part : head.parts)
+                        fg.drawImage(cut(skin, part[0], part[1], part[2], part[3], head.unitsWide, unitsHigh), (int) Math.round(part[4] * sx), (int) Math.round(part[5] * sy), null);
+                    fg.dispose();
                     faces.add(face);
                     names.add(n.substring(n.indexOf("/textures/entity/") + 17).replace(".png", ""));
                 }

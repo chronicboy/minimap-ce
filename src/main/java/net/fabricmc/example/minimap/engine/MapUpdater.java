@@ -25,6 +25,7 @@ public final class MapUpdater implements IWorldAccess {
 	private static final int BLOCK_CHANGE_DELAY_TICKS = 3;
 	private static final int CHUNK_LOAD_DELAY_TICKS = 1;
 	private static final int RETRY_DELAY_TICKS = 2;
+	private static final int NEIGHBOUR_DELAY_TICKS = 10;
 	/** Chunks around the player kept current in cave mode (as the player moves up, down or sideways). */
 	public static final int CAVE_RADIUS = 8;
 	private static final int CAVE_REFRESH_STEP = 4;
@@ -280,6 +281,14 @@ public final class MapUpdater implements IWorldAccess {
 		for (int cz = cz0; cz <= cz1; cz++) {
 			for (int cx = cx0; cx <= cx1; cx++)
 				mark(cx, cz, CHUNK_LOAD_DELAY_TICKS);
+		}
+		if (cx0 == cx1 && cz0 == cz1 && maxX - minX >= 15 && maxZ - minZ >= 15 && maxY - minY >= 255) {
+			// A whole chunk arrived: biome colours blend across chunk borders, so the four neighbours'
+			// edges change too. (Unchanged results cost a comparison and nothing else.)
+			mark(cx0 + 1, cz0, NEIGHBOUR_DELAY_TICKS);
+			mark(cx0 - 1, cz0, NEIGHBOUR_DELAY_TICKS);
+			mark(cx0, cz0 + 1, NEIGHBOUR_DELAY_TICKS);
+			mark(cx0, cz0 - 1, NEIGHBOUR_DELAY_TICKS);
 		}
 	}
 

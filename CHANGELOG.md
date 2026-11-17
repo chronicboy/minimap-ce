@@ -13,10 +13,14 @@ A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explor
 * **Square minimap** - the shape setting now actually works.
 * **Five minimap zoom levels** - 4x, 2x, 1x, 1/2x and 1/4x (was three).
 * **Minimap opacity** - 100% down to 25%.
-* **Mob heads on the radar** - nearby mobs and players show their own face, cut from their skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline. Horses, donkeys, mules, dire wolves and zombie villagers included; mobs from other mods that look humanoid get a face too. The 3.x color-coded arrows and plain dots are available as alternative styles.
-* **Radar on demand** - by default mobs only show while you hold the player list key (Tab), so they do not clutter the map. Set Entity Radar to Always for the 3.x behaviour.
+* **Xaero-style entity radar** - mobs are small color-coded dots, and holding the player list key (Tab) shows each mob's face instead. Faces are cut from the mob's own skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline; horses, donkeys and mules get a side profile, and dire wolves, zombie villagers and humanoid mobs from other mods are covered too. Mobs far above or below you are drawn darker. Always-faces, the 3.x arrows and plain dots are available as alternative styles.
 * **Lettered waypoint tiles** - waypoints are colored tiles with their initial on both maps. The small 3.x squares are still available.
-* **New settings screen** - three tabs, sliders for size, zoom and opacity, the minimap drawn live behind it so changes show immediately, and an explanation of whatever option you hover.
+* **New look for every screen** - one consistent dark theme with flat buttons, cards and a blue accent.
+  * Settings: three tabs, sliders for size, zoom and opacity, the minimap drawn live behind (the card moves aside when there is room), and an explanation of whatever option you hover.
+  * Waypoint list: distance to every waypoint, click a row to edit, Hide/Show All, a scrollbar, and delete asks for a second click.
+  * Waypoint editor: 16 colors, a live tile preview, a Here button (converted for the Nether when editing the other dimension), invalid coordinates are outlined in red instead of silently ignored, and Delete.
+  * Fullscreen map: toolbar with dimension tabs, a distance ruler, hover cards with distance, and a restyled right-click menu. Teleport there also works for the other dimension where possible.
+* **Smooth biome borders** - grass, leaf and water colors are blended over a 5x5 area, across chunk borders, instead of changing in hard blocky lines.
 * **Fullscreen map rebuilt** - drag to pan and scroll to zoom towards the cursor with no stutter, hold WASD/arrow keys to glide, `C` to follow the player again. Zoom steps are chosen so the map is always pixel-sharp, from 64 screen pixels per block out to an overview of everything you have ever explored.
 * **Right-click menu on the fullscreen map** - new waypoint here, teleport here, centre on player; on a waypoint: edit, hide/show, teleport, delete.
 * **Truer colours** - every block state has its own colour (wool, planks, stained clay and friends no longer all look like the first variant), spruce and birch leaves use their own tints, swamp water is swamp coloured.

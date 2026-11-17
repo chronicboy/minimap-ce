@@ -31,7 +31,8 @@ public class GuiFullscreenMap extends GuiScreen {
 	private static final int BOTTOM_BAR_HEIGHT = 18;
 	private static final String[] DIM_NAMES = { "Overworld", "Nether", "End" };
 	private static final int[] DIM_IDS = { 0, -1, 1 };
-	private static final int TAB_GAP = 16;
+	private static final int BTN_DIM_FIRST = 10;
+	private final FlatButton[] dimTabs = new FlatButton[3];
 	private static final double PAN_SPEED = 480.0; // GUI pixels per second
 	private static final int HOVER_RADIUS = 8;
 
@@ -117,10 +118,23 @@ public class GuiFullscreenMap extends GuiScreen {
 				playerDimension = dim;
 		}
 
-		int btnW = 80, btnH = 20, gap = 4, btnY = 3;
-		this.buttonList.add(new GuiButton(0, gap, btnY, btnW, btnH, "Waypoints"));
-		this.buttonList.add(new GuiButton(1, gap + btnW + gap, btnY, btnW, btnH, "Settings"));
-		this.buttonList.add(new GuiButton(2, this.width - btnW - gap, btnY, btnW, btnH, "Close"));
+		// Toolbar: actions on the left, dimension tabs in the middle, close on the right.
+		boolean narrow = this.width < 420;
+		int btnH = 18, btnY = 4;
+		int wpW = narrow ? 60 : 72, setW = narrow ? 54 : 62, closeW = narrow ? 22 : 54;
+		this.buttonList.add(new FlatButton(0, 4, btnY, wpW, btnH, "Waypoints"));
+		this.buttonList.add(new FlatButton(1, 4 + wpW + 4, btnY, setW, btnH, "Settings"));
+		this.buttonList.add(new FlatButton(2, this.width - closeW - 4, btnY, closeW, btnH, narrow ? "X" : "Close"));
+		int tabsW = 0;
+		for (String name : DIM_NAMES)
+			tabsW += this.fontRenderer.getStringWidth(name) + 14 + 2;
+		int tabX = Math.max(4 + wpW + 4 + setW + 8, (this.width - tabsW) / 2);
+		for (int i = 0; i < DIM_NAMES.length; i++) {
+			int w = this.fontRenderer.getStringWidth(DIM_NAMES[i]) + 14;
+			dimTabs[i] = new FlatButton(BTN_DIM_FIRST + i, tabX, btnY, w, btnH, DIM_NAMES[i]).style(MapUi.STYLE_TAB);
+			this.buttonList.add(dimTabs[i]);
+			tabX += w + 2;
+		}
 
 		dragging = false;
 		menuOpen = false;
@@ -145,6 +159,10 @@ public class GuiFullscreenMap extends GuiScreen {
 	protected void actionPerformed(GuiButton button) {
 		if (!button.enabled)
 			return;
+		if (button.id >= BTN_DIM_FIRST && button.id < BTN_DIM_FIRST + DIM_IDS.length) {
+			switchDimension(DIM_IDS[button.id - BTN_DIM_FIRST]);
+			return;
+		}
 		switch (button.id) {
 			case 0:
 				this.mc.displayGuiScreen(new GuiWaypoints(this));
@@ -276,6 +294,10 @@ public class GuiFullscreenMap extends GuiScreen {
 		return best;
 	}
 
+	private static boolean keyDown(int key) {
+		return Keyboard.isCreated() && Keyboard.isKeyDown(key);
+	}
+
 	/** Advances pan/zoom animation by the real time since the last frame. */
 	private void updateView(double mouseX, double mouseY, EntityPlayer player, float partialTicks) {
 		long nowNanos = System.nanoTime();
@@ -285,13 +307,13 @@ public class GuiFullscreenMap extends GuiScreen {
 		if (!menuOpen) {
 			double pan = PAN_SPEED * dt / scale;
 			double dx = 0, dz = 0;
-			if (Keyboard.isKeyDown(Keyboard.KEY_LEFT) || Keyboard.isKeyDown(Keyboard.KEY_A))
+			if (keyDown(Keyboard.KEY_LEFT) || keyDown(Keyboard.KEY_A))
 				dx -= pan;
-			if (Keyboard.isKeyDown(Keyboard.KEY_RIGHT) || Keyboard.isKeyDown(Keyboard.KEY_D))
+			if (keyDown(Keyboard.KEY_RIGHT) || keyDown(Keyboard.KEY_D))
 				dx += pan;
-			if (Keyboard.isKeyDown(Keyboard.KEY_UP) || Keyboard.isKeyDown(Keyboard.KEY_W))
+			if (keyDown(Keyboard.KEY_UP) || keyDown(Keyboard.KEY_W))
 				dz -= pan;
-			if (Keyboard.isKeyDown(Keyboard.KEY_DOWN) || Keyboard.isKeyDown(Keyboard.KEY_S))
+			if (keyDown(Keyboard.KEY_DOWN) || keyDown(Keyboard.KEY_S))
 				dz += pan;
 			if (dx != 0 || dz != 0) {
 				centerX += dx;
@@ -302,7 +324,7 @@ public class GuiFullscreenMap extends GuiScreen {
 		}
 
 		if (dragging) {
-			if (!Mouse.isButtonDown(0)) {
+			if (!Mouse.isCreated() || !Mouse.isButtonDown(0)) {
 				dragging = false;
 			} else {
 				double ddx = mouseX - dragStartMouseX, ddy = mouseY - dragStartMouseY;
@@ -376,6 +398,9 @@ public class GuiFullscreenMap extends GuiScreen {
 		double my = this.height - Mouse.getY() * (double) this.height / mc.displayHeight;
 
 		updateView(mx, my, player, partialTicks);
+		for (int i = 0; i < dimTabs.length; i++)
+			if (dimTabs[i] != null)
+				dimTabs[i].selected = DIM_IDS[i] == viewDimension;
 
 		MapStorage storage = storage();
 		if (storage != null) {
@@ -495,26 +520,13 @@ public class GuiFullscreenMap extends GuiScreen {
 			GL11.glDisable(GL11.GL_SCISSOR_TEST);
 
 			// ---- Bars
-			fill(t, 0, 0, this.width, TOP_BAR_HEIGHT, 0.05f, 0.05f, 0.07f, 0.94f);
-			fill(t, 0, TOP_BAR_HEIGHT - 1, this.width, TOP_BAR_HEIGHT, 0.30f, 0.30f, 0.35f, 0.8f);
-			fill(t, 0, mapBottom, this.width, this.height, 0.05f, 0.05f, 0.07f, 0.94f);
-			fill(t, 0, mapBottom, this.width, mapBottom + 1, 0.30f, 0.30f, 0.35f, 0.8f);
+			MapUi.bar(0, 0, this.width, TOP_BAR_HEIGHT, true);
+			MapUi.bar(0, mapBottom, this.width, this.height, false);
+			GL11.glDisable(GL11.GL_TEXTURE_2D);
 
 			// Cave layer panel (shapes; its text is drawn with the other text below)
 			if (fr != null)
 				drawLayerPanelShapes(t, fr, mx, my);
-
-			// Active dimension underline
-			if (fr != null) {
-				int tabX = tabStartX(fr);
-				int tabY = (TOP_BAR_HEIGHT - 8) / 2;
-				for (int i = 0; i < DIM_NAMES.length; i++) {
-					int tw = fr.getStringWidth(DIM_NAMES[i]);
-					if (viewDimension == DIM_IDS[i])
-						fill(t, tabX - 1, tabY + 10, tabX + tw + 1, tabY + 12, 0.4f, 0.6f, 1.0f, 1.0f);
-					tabX += tw + TAB_GAP;
-				}
-			}
 
 			// ---- Text
 			GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -527,27 +539,20 @@ public class GuiFullscreenMap extends GuiScreen {
 					drawStringOutlined(fr, "E", this.width - fr.getStringWidth("E") - 4, mapTop + mapH / 2 - 4);
 				}
 
-				int tabX = tabStartX(fr);
-				int tabY = (TOP_BAR_HEIGHT - 8) / 2;
-				for (int i = 0; i < DIM_NAMES.length; i++) {
-					fr.drawStringWithShadow(DIM_NAMES[i], tabX, tabY, viewDimension == DIM_IDS[i] ? 0xFFFFFF : 0x888888);
-					tabX += fr.getStringWidth(DIM_NAMES[i]) + TAB_GAP;
-				}
-
+				drawScaleBar(fr, mapBottom);
 				if (layerPanelVisible)
 					drawLayerPanelText(fr);
 				drawBottomBar(fr, storage, player, mx, my, mapBottom, complete);
 
 				if (!menuOpen) {
 					if (hovered != null) {
-						drawLabel(t, fr, hovered.name + "  \u00a77" + hovered.x + ", " + hovered.y + ", " + hovered.z,
-								toScreenX(hovered.x + 0.5), toScreenY(hovered.z + 0.5), hovered.color);
+						drawLabel(fr, hovered.name, hovered.x, hovered.y, hovered.z, hovered.color);
 					} else if (hoveredSpawn) {
-						drawLabel(t, fr, "Spawn  \u00a77" + spawnX() + ", " + spawnZ(), toScreenX(spawnX() + 0.5),
-								toScreenY(spawnZ() + 0.5), 0x5599FF);
+						drawLabel(fr, "Spawn Point", spawnX(), viewDimension == 1 ? 49 : SpawnTracker.instance.getSpawnY(),
+								spawnZ(), 0x3F7FE0);
 					}
 				} else {
-					drawMenu(t, fr, mx, my);
+					drawMenu(fr, mx, my);
 				}
 			}
 			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -638,22 +643,22 @@ public class GuiFullscreenMap extends GuiScreen {
 		if (!layerPanelVisible)
 			return;
 		panelW = PANEL_ARROW_W * 2 + fr.getStringWidth("Caves  y 240 to 255") + 10;
-		panelH = 14;
+		panelH = 16;
 		panelX = this.width - panelW - 6;
 		panelY = TOP_BAR_HEIGHT + 6;
 		int[] choices = layerChoices();
 		boolean canUp = choices[0] != viewLayer;
 		boolean canDown = choices[choices.length - 1] != viewLayer;
 
-		fill(t, panelX - 1, panelY - 1, panelX + panelW + 1, panelY + panelH + 1, 0.30f, 0.30f, 0.36f, 0.9f);
-		fill(t, panelX, panelY, panelX + panelW, panelY + panelH, 0.05f, 0.05f, 0.08f, 0.9f);
+		MapUi.panel(panelX, panelY, panelX + panelW, panelY + panelH);
 		boolean hover = inPanel(mx, my) && !menuOpen;
 		if (hover) {
 			int x0 = mx < panelX + PANEL_ARROW_W ? panelX
 					: (mx >= panelX + panelW - PANEL_ARROW_W ? panelX + panelW - PANEL_ARROW_W : panelX + PANEL_ARROW_W);
 			int x1 = x0 == panelX + PANEL_ARROW_W ? panelX + panelW - PANEL_ARROW_W : x0 + PANEL_ARROW_W;
-			fill(t, x0, panelY, x1, panelY + panelH, 0.25f, 0.40f, 0.75f, 0.6f);
+			MapUi.rect(x0 + 1, panelY + 1, x1 - 1, panelY + panelH - 1, 0x902F64C8);
 		}
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		// Up (towards the surface) on the left, down (deeper) on the right.
 		t.startDrawing(GL11.GL_TRIANGLES);
 		float upC = canUp ? 0.95f : 0.35f, downC = canDown ? 0.95f : 0.35f;
@@ -683,13 +688,6 @@ public class GuiFullscreenMap extends GuiScreen {
 	private boolean onScreen(double sx, double sy) {
 		return sx >= -8 && sx <= this.width + 8 && sy >= TOP_BAR_HEIGHT - 8
 				&& sy <= this.height - BOTTOM_BAR_HEIGHT + 8;
-	}
-
-	private int tabStartX(FontRenderer fr) {
-		int total = TAB_GAP * (DIM_NAMES.length - 1);
-		for (String name : DIM_NAMES)
-			total += fr.getStringWidth(name);
-		return (this.width - total) / 2;
 	}
 
 	private void drawBottomBar(FontRenderer fr, MapStorage storage, EntityPlayer player, double mx, double my,
@@ -754,18 +752,44 @@ public class GuiFullscreenMap extends GuiScreen {
 		t.draw();
 	}
 
-	/** Small name tag above a marker. Leaves texturing enabled. */
-	private void drawLabel(Tessellator t, FontRenderer fr, String text, double sx, double sy, int rgb) {
-		int textW = fr.getStringWidth(text);
-		int x = (int) Math.round(sx) - textW / 2;
-		int y = (int) Math.round(sy) - 17;
-		x = Math.max(3, Math.min(x, this.width - textW - 3));
-		if (y < TOP_BAR_HEIGHT + 2)
-			y = (int) Math.round(sy) + 8;
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		fill(t, x - 3, y - 2, x + textW + 3, y + 10, 0.0f, 0.0f, 0.0f, 0.72f);
-		GL11.glEnable(GL11.GL_TEXTURE_2D);
-		fr.drawStringWithShadow(text, x, y, rgb & 0xFFFFFF);
+	/** Card above a hovered marker: tile, name, coordinates and distance. Leaves texturing enabled. */
+	private void drawLabel(FontRenderer fr, String name, int x, int y, int z, int rgb) {
+		String coords = "x " + x + "   y " + y + "   z " + z;
+		if (viewingPlayerDimension() && this.mc.thePlayer != null) {
+			double dx = x + 0.5 - this.mc.thePlayer.posX, dz = z + 0.5 - this.mc.thePlayer.posZ;
+			coords += "   " + MapUi.distance(Math.sqrt(dx * dx + dz * dz));
+		}
+		int w = Math.max(fr.getStringWidth(name) + 16, fr.getStringWidth(coords)) + 12;
+		int h = 26;
+		int sx = (int) Math.round(toScreenX(x + 0.5)), sy = (int) Math.round(toScreenY(z + 0.5));
+		int left = Math.max(4, Math.min(sx - w / 2, this.width - w - 4));
+		int top = sy - h - 10;
+		if (top < TOP_BAR_HEIGHT + 4)
+			top = sy + 10;
+		MapUi.panel(left, top, left + w, top + h);
+		MapUi.tile(fr, left + 6, top + 5, 9, rgb, MapMarkers.tileLetter(name));
+		fr.drawStringWithShadow(name, left + 19, top + 5, 0xFFFFFF);
+		fr.drawStringWithShadow(coords, left + 6, top + 16, MapUi.TEXT_DIM);
+	}
+
+	/** Distance ruler in the bottom-left corner of the map. */
+	private void drawScaleBar(FontRenderer fr, int mapBottom) {
+		int[] nice = { 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000 };
+		int blocks = nice[0];
+		for (int n : nice)
+			if (n * scale <= 90)
+				blocks = n;
+		int length = (int) Math.round(blocks * scale);
+		if (length < 12)
+			return;
+		int x0 = 8, y0 = mapBottom - 9;
+		MapUi.rect(x0 - 1, y0 - 4, x0 + length + 1, y0 + 3, 0x60000000);
+		MapUi.rect(x0, y0, x0 + length, y0 + 2, 0xFFEDEDED);
+		MapUi.rect(x0, y0 - 3, x0 + 1, y0 + 2, 0xFFEDEDED);
+		MapUi.rect(x0 + length - 1, y0 - 3, x0 + length, y0 + 2, 0xFFEDEDED);
+		String label = blocks >= 1000 && blocks % 1000 == 0 ? (blocks / 1000) + "k blocks"
+				: blocks + (blocks == 1 ? " block" : " blocks");
+		fr.drawStringWithShadow(label, x0, y0 - 13, 0xFFFFFF);
 	}
 
 	private void fill(Tessellator t, double x0, double y0, double x1, double y1, float r, float g, float b, float a) {
@@ -788,7 +812,7 @@ public class GuiFullscreenMap extends GuiScreen {
 
 	// ------------------------------------------------------------ context menu
 
-	private static final int MENU_ROW = 13;
+	private static final int MENU_ROW = 14;
 
 	private void openMenu(int mouseX, int mouseY) {
 		menuLabels.clear();
@@ -796,14 +820,14 @@ public class GuiFullscreenMap extends GuiScreen {
 		menuWorldX = (int) Math.floor(toWorldX(mouseX));
 		menuWorldZ = (int) Math.floor(toWorldZ(mouseY));
 		menuWaypoint = waypointNear(mouseX, mouseY);
-		boolean canTeleport = MapConfig.instance.showTeleportButton && viewingPlayerDimension();
+		boolean canTeleport = MapConfig.instance.showTeleportButton;
 
 		if (menuWaypoint != null) {
 			addMenuItem("Edit \"" + menuWaypoint.name + "\"", ACTION_EDIT);
 			addMenuItem(menuWaypoint.enabled ? "Hide" : "Show", ACTION_TOGGLE);
 			if (canTeleport)
 				addMenuItem("Teleport to waypoint", ACTION_TELEPORT_WAYPOINT);
-			addMenuItem("\u00a7cDelete", ACTION_DELETE);
+			addMenuItem("Delete", ACTION_DELETE);
 		} else {
 			addMenuItem("New waypoint here", ACTION_NEW_WAYPOINT);
 			if (canTeleport)
@@ -815,7 +839,7 @@ public class GuiFullscreenMap extends GuiScreen {
 		menuW = 0;
 		for (String label : menuLabels)
 			menuW = Math.max(menuW, this.fontRenderer.getStringWidth(label));
-		menuW += 12;
+		menuW += 16;
 		int menuH = menuLabels.size() * MENU_ROW + 4;
 		menuX = Math.max(2, Math.min(mouseX, this.width - menuW - 2));
 		menuY = Math.max(TOP_BAR_HEIGHT + 2, Math.min(mouseY, this.height - BOTTOM_BAR_HEIGHT - menuH - 2));
@@ -835,18 +859,17 @@ public class GuiFullscreenMap extends GuiScreen {
 		return index >= 0 && index < menuLabels.size() && my >= menuY + 2 ? index : -1;
 	}
 
-	private void drawMenu(Tessellator t, FontRenderer fr, double mx, double my) {
+	private void drawMenu(FontRenderer fr, double mx, double my) {
 		int menuH = menuLabels.size() * MENU_ROW + 4;
 		int hover = menuIndexAt(mx, my);
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
-		fill(t, menuX - 1, menuY - 1, menuX + menuW + 1, menuY + menuH + 1, 0.35f, 0.35f, 0.42f, 1.0f);
-		fill(t, menuX, menuY, menuX + menuW, menuY + menuH, 0.06f, 0.06f, 0.09f, 0.97f);
+		MapUi.panel(menuX, menuY, menuX + menuW, menuY + menuH);
 		if (hover >= 0)
-			fill(t, menuX + 1, menuY + 2 + hover * MENU_ROW, menuX + menuW - 1, menuY + 2 + (hover + 1) * MENU_ROW,
-					0.25f, 0.40f, 0.75f, 0.85f);
-		GL11.glEnable(GL11.GL_TEXTURE_2D);
-		for (int i = 0; i < menuLabels.size(); i++)
-			fr.drawStringWithShadow(menuLabels.get(i), menuX + 6, menuY + 4 + i * MENU_ROW, 0xFFFFFF);
+			MapUi.rect(menuX + 2, menuY + 2 + hover * MENU_ROW, menuX + menuW - 2, menuY + 2 + (hover + 1) * MENU_ROW,
+					menuActions.get(hover) == ACTION_DELETE ? 0xC05A2328 : 0xC02F64C8);
+		for (int i = 0; i < menuLabels.size(); i++) {
+			int color = menuActions.get(i) == ACTION_DELETE ? 0xFF9A92 : (i == hover ? 0xFFFFFF : 0xE6E7EC);
+			fr.drawStringWithShadow(menuLabels.get(i), menuX + 8, menuY + 5 + i * MENU_ROW, color);
+		}
 	}
 
 	private Waypoint waypointNear(double mx, double my) {
@@ -926,16 +949,7 @@ public class GuiFullscreenMap extends GuiScreen {
 	}
 
 	private void teleport(int x, int y, int z, String name) {
-		String cmd = MapConfig.instance.teleportCommand
-				.replace("{x}", String.valueOf(x))
-				.replace("{y}", String.valueOf(y))
-				.replace("{z}", String.valueOf(z))
-				.replace("{dim}", String.valueOf(viewDimension))
-				.replace("{name}", name == null ? "" : name);
-		Minecraft minecraft = this.mc;
-		minecraft.displayGuiScreen(null);
-		if (minecraft.thePlayer != null)
-			minecraft.thePlayer.sendChatMessage(cmd);
+		Teleport.to(this.mc, x, y, z, viewDimension, name);
 	}
 
 	private static int nextColor(int index) {
@@ -1007,20 +1021,8 @@ public class GuiFullscreenMap extends GuiScreen {
 		if (this.mc.currentScreen != this)
 			return; // a button opened another screen
 
-		if (mouseY < TOP_BAR_HEIGHT) {
-			if (mouseButton == 0 && this.fontRenderer != null) {
-				int tabX = tabStartX(this.fontRenderer);
-				for (int i = 0; i < DIM_NAMES.length; i++) {
-					int tw = this.fontRenderer.getStringWidth(DIM_NAMES[i]);
-					if (mouseX >= tabX - 4 && mouseX < tabX + tw + 4) {
-						switchDimension(DIM_IDS[i]);
-						return;
-					}
-					tabX += tw + TAB_GAP;
-				}
-			}
+		if (mouseY < TOP_BAR_HEIGHT)
 			return;
-		}
 		if (!inMapArea(mouseX, mouseY))
 			return;
 		if (layerPanelVisible && inPanel(mouseX, mouseY)) {

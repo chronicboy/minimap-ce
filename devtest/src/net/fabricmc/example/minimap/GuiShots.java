@@ -1,0 +1,234 @@
+package net.fabricmc.example.minimap;
+
+import net.fabricmc.example.minimap.engine.CaveLayers;
+import net.fabricmc.example.minimap.engine.MapEngine;
+import net.fabricmc.example.minimap.engine.MapIO;
+import net.fabricmc.example.minimap.engine.MapShade;
+import net.fabricmc.example.minimap.engine.MapStorage;
+import net.minecraft.src.*;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.Pbuffer;
+import org.lwjgl.opengl.PixelFormat;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+
+/**
+ * Renders the mod's real screens offscreen with the game's real font and
+ * textures, in a stand-in world, and saves them as PNGs to look at.
+ *
+ *   GuiShots <output folder>
+ */
+public class GuiShots {
+    static Minecraft mc;
+    static sun.misc.Unsafe unsafe;
+
+    static void set(Object target, Class<?> owner, String name, Object value) throws Exception {
+        Field f = owner.getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    static <T> T alloc(Class<T> type) throws Exception {
+        return (T) unsafe.allocateInstance(type);
+    }
+
+    public static void main(String[] args) throws Exception {
+        File out = new File(args[0]);
+        out.mkdirs();
+        Field uf = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        uf.setAccessible(true);
+        unsafe = (sun.misc.Unsafe) uf.get(null);
+
+        // MCPatcher (built into BTW) reads its config through Fabric Loader: give the loader a game folder.
+        File gameDir = new File(out, "game");
+        new File(gameDir, "config").mkdirs();
+        Class<?> loaderImpl = Class.forName("net.fabricmc.loader.impl.FabricLoaderImpl");
+        Object loader = loaderImpl.getField("INSTANCE").get(null);
+        Method setGameDir = loaderImpl.getDeclaredMethod("setGameDir", java.nio.file.Path.class);
+        setGameDir.setAccessible(true);
+        setGameDir.invoke(loader, gameDir.toPath().toAbsolutePath());
+
+        Class<?> launcherBase = Class.forName("net.fabricmc.loader.impl.launch.FabricLauncherBase");
+        Class<?> launcherType = Class.forName("net.fabricmc.loader.impl.launch.FabricLauncher");
+        Object launcher = java.lang.reflect.Proxy.newProxyInstance(GuiShots.class.getClassLoader(), new Class<?>[] { launcherType },
+                (proxy, method, margs) -> {
+                    Class<?> r = method.getReturnType();
+                    if (r == boolean.class) return method.getName().equals("isDevelopment");
+                    if (r == int.class) return 0;
+                    if (r == long.class) return 0L;
+                    if (r == String.class) return "devtest";
+                    return null;
+                });
+        Field launcherField = launcherBase.getDeclaredField("launcher");
+        launcherField.setAccessible(true);
+        launcherField.set(null, launcher);
+        com.prupe.mcpatcher.MCPatcherUtils.setMinecraft(gameDir, null, "1.6.4", "devtest");
+
+        int maxW = 1280, maxH = 720;
+        Pbuffer pb = new Pbuffer(maxW, maxH, new PixelFormat(8, 24, 0), null);
+        pb.makeCurrent();
+
+        // ---- a minimal game: resources, textures, font
+        mc = alloc(Minecraft.class);
+        set(null, Minecraft.class, "theMinecraft", mc);
+        set(mc, Minecraft.class, "mcLogAgent", new LogAgent("GuiShots", " [GuiShots]", new File(out, "gui-shots.log").getPath()));
+        MetadataSerializer ms = new MetadataSerializer();
+        ms.registerMetadataSectionType(new TextureMetadataSectionSerializer(), TextureMetadataSection.class);
+        ms.registerMetadataSectionType(new FontMetadataSectionSerializer(), FontMetadataSection.class);
+        ms.registerMetadataSectionType(new AnimationMetadataSectionSerializer(), AnimationMetadataSection.class);
+        ms.registerMetadataSectionType(new PackMetadataSectionSerializer(), PackMetadataSection.class);
+        SimpleReloadableResourceManager rm = new SimpleReloadableResourceManager(ms);
+        ArrayList<Object> packs = new ArrayList<Object>();
+        packs.add(new DefaultResourcePack(new File(out, "no-assets")));
+        rm.reloadResources(packs);
+        set(mc, Minecraft.class, "mcResourceManager", rm);
+        TextureManager tm = new TextureManager(rm);
+        mc.renderEngine = tm;
+        GameSettings gs = new GameSettings();
+        mc.gameSettings = gs;
+        FontRenderer fr = new FontRenderer(gs, new ResourceLocation("textures/font/ascii.png"), tm, false);
+        fr.onResourceManagerReload(rm);
+        mc.fontRenderer = fr;
+
+        // ---- a stand-in world and player at y 40 (inside a cave layer)
+        WorldClient world = alloc(WorldClient.class);
+        WorldProvider provider = alloc(WorldProviderSurface.class);
+        provider.dimensionId = 0;
+        set(world, World.class, "provider", provider);
+        set(world, World.class, "loadedEntityList", new ArrayList<Object>());
+        WorldInfo info = alloc(WorldInfo.class);
+        set(world, World.class, "worldInfo", info);
+        mc.theWorld = world;
+        EntityClientPlayerMP player = alloc(EntityClientPlayerMP.class);
+        player.posX = player.prevPosX = 40.3;
+        player.posZ = player.prevPosZ = -12.6;
+        player.posY = player.prevPosY = 41.6;
+        player.rotationYaw = player.prevRotationYaw = 200f;
+        set(player, Entity.class, "boundingBox", AxisAlignedBB.getBoundingBox(40, 40, -13, 40.6, 41.8, -12.4));
+        mc.thePlayer = player;
+
+        // ---- map data around the player
+        MapStorage surface = new MapStorage(new File(out, "map"), null);
+        int[] buf = new int[256];
+        for (int cz = -30; cz <= 30; cz++) for (int cx = -40; cx <= 40; cx++) {
+            if (cx * cx + cz * cz * 2 > 34 * 34 + VisualTestTerrain.hash(cx, cz) * 300) continue;
+            for (int i = 0; i < 256; i++) buf[i] = VisualTestTerrain.tile(cx * 16 + (i & 15), cz * 16 + (i >> 4));
+            surface.putChunk(cx, cz, buf);
+        }
+        set(MapEngine.INSTANCE, MapEngine.class, "storage", surface);
+        CaveLayers layers = new CaveLayers(new File(out, "caves"));
+        int[] cave = new int[256];
+        for (int cz = -6; cz <= 6; cz++) for (int cx = -6; cx <= 6; cx++) {
+            for (int i = 0; i < 256; i++) {
+                int x = cx * 16 + (i & 15), z = cz * 16 + (i >> 4);
+                boolean tunnel = Math.abs(Math.sin(x / 9.0) * 14 - z % 40) < 3 || Math.abs(x % 37) < 2 || VisualTestTerrain.fbm(x / 12.0, z / 12.0) > 0.62;
+                cave[i] = tunnel ? MapShade.pack(0x7D7D7D, 38 + (int) (VisualTestTerrain.fbm(x / 7.0, z / 7.0) * 4)) : MapShade.pack(0x2A2A2A, 0);
+            }
+            layers.record(cx, cz, 40, cave);
+        }
+        layers.record(0, 0, 70, cave);
+        for (int i = 0; i < 30; i++) { MapIO.flush(1000); layers.tick(); }
+        set(MapEngine.INSTANCE, MapEngine.class, "caveLayers", layers);
+        set(MapEngine.INSTANCE, MapEngine.class, "caveStorage", MapStorage.memoryOnly());
+        set(MapEngine.INSTANCE, MapEngine.class, "caveActive", Boolean.TRUE);
+
+        WaypointManager.instance.getWaypoints().clear();
+        String[] names = { "Home", "Iron Mine", "Village", "Nether Portal", "Sheep Farm", "Ravine", "Desert Temple", "Lookout", "Wheat", "Ocean Monument Spot With A Very Long Name" };
+        int[] colors = { 0xFF5555, 0xA8A8B3, 0x3DBF5A, 0x9966FF, 0xF2F2F2, 0xFF9933, 0xFFE14D, 0x4DD2FF, 0x9BE34B, 0x3F5BFF };
+        for (int i = 0; i < names.length; i++) {
+            Waypoint wp = new Waypoint(names[i], (int) (Math.cos(i * 1.7) * (60 + i * 25)), 64 + i, (int) (Math.sin(i * 1.7) * (60 + i * 25)), colors[i]);
+            wp.enabled = i != 5;
+            WaypointManager.instance.getWaypoints().add(wp);
+        }
+        set(SpawnTracker.instance, SpawnTracker.class, "hasSpawn", Boolean.TRUE);
+        set(SpawnTracker.instance, SpawnTracker.class, "spawnX", 8);
+        set(SpawnTracker.instance, SpawnTracker.class, "spawnY", 66);
+        set(SpawnTracker.instance, SpawnTracker.class, "spawnZ", -20);
+
+        MapConfig cfg = MapConfig.instance;
+        cfg.showBiome = false; // needs real chunks
+        cfg.showEntities = false;
+
+        int[][] sizes = { { 1280, 720, 2 }, { 854, 480, 2 }, { 1280, 720, 3 } };
+        for (int[] size : sizes) {
+            String tag = size[0] + "x" + size[1] + "s" + size[2];
+            gs.guiScale = size[2];
+            mc.displayWidth = size[0];
+            mc.displayHeight = size[1];
+
+            shoot(new GuiFullscreenMap(), size, new File(out, "fullscreen-" + tag + ".png"), 300, 200, null);
+            GuiFullscreenMap menuShot = new GuiFullscreenMap();
+            shoot(menuShot, size, new File(out, "fullscreen-menu-" + tag + ".png"), 300, 200, menuShot);
+            shoot(new GuiWaypoints(), size, new File(out, "waypoints-" + tag + ".png"), 120, 92, null);
+            shoot(new GuiWaypointEdit(null, WaypointManager.instance.getWaypoints().get(1), false), size,
+                    new File(out, "waypoint-edit-" + tag + ".png"), 0, 0, null);
+            for (int page = 0; page < 3; page++) {
+                set(null, GuiMapSettings.class, "lastPage", page);
+                shoot(new GuiMapSettings(null), size, new File(out, "settings" + page + "-" + tag + ".png"), -1, -1, null);
+            }
+        }
+        System.out.println("GL error: " + GL11.glGetError());
+        pb.destroy();
+        System.exit(0);
+    }
+
+    static void shoot(GuiScreen screen, int[] size, File file, int mouseX, int mouseY, GuiFullscreenMap openMenuOn) throws Exception {
+        int W = size[0], H = size[1];
+        ScaledResolution sr = new ScaledResolution(mc.gameSettings, W, H);
+        int gw = sr.getScaledWidth(), gh = sr.getScaledHeight();
+        screen.setWorldAndResolution(mc, gw, gh);
+        if (screen instanceof GuiMapSettings && mouseX < 0) {
+            // hover the second option of the page so its help text shows
+            Field bl = GuiScreen.class.getDeclaredField("buttonList");
+            bl.setAccessible(true);
+            java.util.List<?> buttons = (java.util.List<?>) bl.get(screen);
+            GuiButton b = (GuiButton) buttons.get(4);
+            mouseX = b.xPosition + 5;
+            mouseY = b.yPosition + 5;
+        }
+        for (int frame = 0; frame < 8; frame++) {
+            GL11.glViewport(0, 0, W, H);
+            GL11.glClearColor(0.42f, 0.58f, 0.80f, 1f);
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+            // A fake world view behind the GUI: sky and grass.
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, sr.getScaledWidth_double(), sr.getScaledHeight_double(), 0.0D, 1000.0D, 3000.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glLoadIdentity();
+            GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+            Gui.drawRect(0, gh * 3 / 5, gw, gh, 0xFF4F7A33);
+            GL11.glEnable(GL11.GL_ALPHA_TEST);
+            GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
+            GL11.glShadeModel(GL11.GL_FLAT);
+            if (frame == 6 && openMenuOn != null) {
+                Method open = GuiFullscreenMap.class.getDeclaredMethod("openMenu", int.class, int.class);
+                open.setAccessible(true);
+                open.invoke(openMenuOn, gw / 2 + 10, gh / 2 - 20);
+            }
+            screen.drawScreen(mouseX, mouseY, 1.0f);
+            screen.updateScreen();
+            MapIO.flush(500);
+            MapEngine.INSTANCE.storage().tick();
+        }
+        GL11.glFinish();
+        IntBuffer buf = BufferUtils.createIntBuffer(W * H);
+        GL11.glReadPixels(0, 0, W, H, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
+        int[] row = new int[W];
+        for (int y = 0; y < H; y++) { buf.position((H - 1 - y) * W); buf.get(row); img.setRGB(0, y, W, 1, row, 0, W); }
+        ImageIO.write(img, "png", file);
+        int err = GL11.glGetError();
+        System.out.println("wrote " + file.getName() + (err != 0 ? "  GL ERROR " + err : ""));
+    }
+}

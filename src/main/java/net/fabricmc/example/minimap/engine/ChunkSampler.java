@@ -13,6 +13,20 @@ public final class ChunkSampler {
 	private static final int MAX_WATER_DEPTH = 24;
 	private static final int CAVE_FLOOR_SEARCH = 48;
 
+	// Biome tint blending: grass, leaves and water colours are averaged over a 5x5 area, across
+	// chunk borders, so biome edges fade into each other instead of forming hard blocky lines.
+	private static final int BLEND_RADIUS = 2;
+	private static final int GRID = 16 + 2 * BLEND_RADIUS;
+	private static final int BLEND_AREA = (2 * BLEND_RADIUS + 1) * (2 * BLEND_RADIUS + 1);
+	private static final int[] gridBiomes = new int[GRID * GRID];
+	private static final int[][] blendedTints = new int[4][256];
+	private static final boolean[] blendedReady = new boolean[4];
+	private static final int[] rowSums = new int[GRID * 16 * 3];
+	private static final Chunk[] neighbours = new Chunk[9];
+	private static boolean gridReady;
+	private static Chunk gridChunk;
+	private static World gridWorld;
+
 	private ChunkSampler() {
 	}
 
@@ -36,7 +50,7 @@ public final class ChunkSampler {
 			return 0;
 		}
 		int topY = (topSection << 4) + 15;
-		byte[] biomes = chunk.getBiomeArray();
+		beginChunk(chunk, world);
 		int found = 0;
 
 		for (int z = 0; z < 16; z++) {
@@ -61,10 +75,9 @@ public final class ChunkSampler {
 					continue;
 				}
 
-				int biome = biomeAt(chunk, world, biomes, x, z);
-				int rgb = stateColor((id << 4) | (section.getExtBlockMetadata(x, y & 15, z) & 15), biome);
+				int rgb = stateColor((id << 4) | (section.getExtBlockMetadata(x, y & 15, z) & 15), x, z);
 				if (BlockColors.isWater(id))
-					rgb = waterColor(chunk, x, y, z, rgb, biome);
+					rgb = waterColor(chunk, x, y, z, rgb);
 				out[index] = MapShade.pack(rgb, y);
 				found++;
 			}
@@ -85,7 +98,7 @@ public final class ChunkSampler {
 			refY = 1;
 		if (refY > 254)
 			refY = 254;
-		byte[] biomes = chunk.getBiomeArray();
+		beginChunk(chunk, world);
 		int found = 0;
 
 		for (int z = 0; z < 16; z++) {
@@ -111,8 +124,7 @@ public final class ChunkSampler {
 						} else {
 							int id = chunk.getBlockID(x, y, z);
 							int rgb = (id > 0 && id < 4096)
-									? stateColor((id << 4) | (chunk.getBlockMetadata(x, y, z) & 15),
-											biomeAt(chunk, world, biomes, x, z))
+									? stateColor((id << 4) | (chunk.getBlockMetadata(x, y, z) & 15), x, z)
 									: 0x202020;
 							out[index] = MapShade.pack(MapShade.scale(rgb, 84), 0);
 						}
@@ -135,8 +147,7 @@ public final class ChunkSampler {
 				}
 
 				int id = chunk.getBlockID(x, floorY, z);
-				int rgb = stateColor((id << 4) | (chunk.getBlockMetadata(x, floorY, z) & 15),
-						biomeAt(chunk, world, biomes, x, z));
+				int rgb = stateColor((id << 4) | (chunk.getBlockMetadata(x, floorY, z) & 15), x, z);
 				int below = refY - floorY;
 				if (below > 6) {
 					int f = 256 - (below - 6) * 5;
@@ -154,6 +165,93 @@ public final class ChunkSampler {
 		return id <= 0 || id >= 4096 || BlockColors.isSkipped(id);
 	}
 
+	private static void beginChunk(Chunk chunk, World world) {
+		gridChunk = chunk;
+		gridWorld = world;
+		gridReady = false;
+		for (int i = 0; i < blendedReady.length; i++)
+			blendedReady[i] = false;
+	}
+
+	/** Biome ids of the chunk plus a border taken from loaded neighbours (or the chunk's own edge). */
+	private static void buildGrid() {
+		gridReady = true;
+		Chunk chunk = gridChunk;
+		for (int i = 0; i < 9; i++) {
+			Chunk n = null;
+			if (i == 4) {
+				n = chunk;
+			} else if (gridWorld != null) {
+				try {
+					n = gridWorld.getChunkFromChunkCoords(chunk.xPosition + (i % 3) - 1, chunk.zPosition + (i / 3) - 1);
+					if (n != null && n.isEmpty())
+						n = null;
+				} catch (Throwable t) {
+					n = null;
+				}
+			}
+			neighbours[i] = n;
+		}
+		for (int gz = 0; gz < GRID; gz++) {
+			for (int gx = 0; gx < GRID; gx++) {
+				int lx = gx - BLEND_RADIUS, lz = gz - BLEND_RADIUS;
+				int ox = lx < 0 ? 0 : (lx > 15 ? 2 : 1);
+				int oz = lz < 0 ? 0 : (lz > 15 ? 2 : 1);
+				Chunk n = neighbours[oz * 3 + ox];
+				if (n == null) {
+					// Neighbour not loaded: continue the chunk's own edge.
+					n = chunk;
+					lx = lx < 0 ? 0 : (lx > 15 ? 15 : lx);
+					lz = lz < 0 ? 0 : (lz > 15 ? 15 : lz);
+				}
+				gridBiomes[gz * GRID + gx] = biomeAt(n, gridWorld, n.getBiomeArray(), lx & 15, lz & 15);
+			}
+		}
+		for (int i = 0; i < 9; i++)
+			neighbours[i] = null;
+	}
+
+	/** Tint of a type at a column, averaged over the surrounding 5x5 blocks. */
+	private static int blendedTint(int type, int x, int z) {
+		if (!blendedReady[type]) {
+			if (!gridReady)
+				buildGrid();
+			int[] out = blendedTints[type];
+			int width = 2 * BLEND_RADIUS + 1;
+			// Horizontal pass: GRID rows x 16 columns of sums.
+			for (int gz = 0; gz < GRID; gz++) {
+				for (int x0 = 0; x0 < 16; x0++) {
+					int r = 0, g = 0, b = 0;
+					for (int k = 0; k < width; k++) {
+						int rgb = BlockColors.biomeTint(type, gridBiomes[gz * GRID + x0 + k]);
+						r += (rgb >> 16) & 0xFF;
+						g += (rgb >> 8) & 0xFF;
+						b += rgb & 0xFF;
+					}
+					int i = (gz * 16 + x0) * 3;
+					rowSums[i] = r;
+					rowSums[i + 1] = g;
+					rowSums[i + 2] = b;
+				}
+			}
+			// Vertical pass.
+			for (int z0 = 0; z0 < 16; z0++) {
+				for (int x0 = 0; x0 < 16; x0++) {
+					int r = 0, g = 0, b = 0;
+					for (int k = 0; k < width; k++) {
+						int i = ((z0 + k) * 16 + x0) * 3;
+						r += rowSums[i];
+						g += rowSums[i + 1];
+						b += rowSums[i + 2];
+					}
+					out[(z0 << 4) | x0] = ((r / BLEND_AREA) << 16) | ((g / BLEND_AREA) << 8) | (b / BLEND_AREA);
+				}
+			}
+			blendedReady[type] = true;
+		}
+		return blendedTints[type][(z << 4) | x];
+	}
+
 	private static int biomeAt(Chunk chunk, World world, byte[] biomes, int x, int z) {
 		int id = biomes != null && biomes.length >= 256 ? biomes[(z << 4) | x] & 255 : 255;
 		if (id == 255) {
@@ -168,7 +266,7 @@ public final class ChunkSampler {
 		return id;
 	}
 
-	private static int stateColor(int state, int biome) {
+	private static int stateColor(int state, int x, int z) {
 		int rgb = BlockColors.color(state);
 		if (rgb == 0) {
 			rgb = BlockColors.color(state & ~15);
@@ -176,11 +274,11 @@ public final class ChunkSampler {
 				return 0x7F7F7F;
 		}
 		int type = BlockColors.tintType(state);
-		return type == BlockColors.TINT_NONE ? rgb : MapShade.multiply(rgb, BlockColors.biomeTint(type, biome));
+		return type == BlockColors.TINT_NONE ? rgb : MapShade.multiply(rgb, blendedTint(type, x, z));
 	}
 
 	/** Shallow water lets the bed show through; deep water gets darker. */
-	private static int waterColor(Chunk chunk, int x, int surfaceY, int z, int waterRgb, int biome) {
+	private static int waterColor(Chunk chunk, int x, int surfaceY, int z, int waterRgb) {
 		int y = surfaceY - 1;
 		int limit = Math.max(0, surfaceY - MAX_WATER_DEPTH);
 		int floorId = 0;
@@ -195,7 +293,7 @@ public final class ChunkSampler {
 		int depth = surfaceY - y;
 		int rgb = waterRgb;
 		if (floorId != 0) {
-			int floorRgb = stateColor((floorId << 4) | (chunk.getBlockMetadata(x, y, z) & 15), biome);
+			int floorRgb = stateColor((floorId << 4) | (chunk.getBlockMetadata(x, y, z) & 15), x, z);
 			int opacity = 150 + depth * 14;
 			if (opacity > 240)
 				opacity = 240;
