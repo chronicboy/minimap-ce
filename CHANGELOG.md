@@ -22,7 +22,7 @@ A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explor
   * Fullscreen map: toolbar with dimension tabs, a distance ruler, hover cards with distance, and a restyled right-click menu. Teleport there also works for the other dimension where possible.
 * **Gloom countdown** - the clock shows the days until the next gloom (new moon) night in brackets, and (Gloom) on the day itself.
 * **Coordinates as plain numbers** - x, y, z without labels, on the minimap and the fullscreen map.
-* **Refined minimap frame** - lit metal band, crisp outline, inner shadow and round compass badges with north in red; unexplored ground is faintly hatched instead of looking empty.
+* **Refined minimap frame** - lit metal band, crisp outline, inner shadow and Xaero-style compass letters just inside the edge; a minimal white player arrow, and every arrow now has smooth (anti-aliased) edges; unexplored ground is faintly hatched instead of looking empty.
 * **Snow, ice and trees at the edge of the explored area** - the outermost ring of loaded chunks arrives before the world generator has decorated it, so the map used to keep a bare grass strip along every edge. A chunk is now only mapped once all its neighbours have loaded, by which point it is finished.
 * **Smooth biome borders** - grass, leaf and water colors are blended over a 5x5 area, across chunk borders, instead of changing in hard blocky lines.
 * **Fullscreen map rebuilt** - drag to pan and scroll to zoom towards the cursor with no stutter, hold WASD/arrow keys to glide, `C` to follow the player again. Zoom steps are chosen so the map is always pixel-sharp, from 64 screen pixels per block out to an overview of everything you have ever explored.

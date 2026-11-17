@@ -433,6 +433,7 @@ public class GuiFullscreenMap extends GuiScreen {
 			GL11.glLineWidth(1.0f);
 			GL11.glShadeModel(GL11.GL_SMOOTH);
 			GL11.glDisable(GL11.GL_TEXTURE_2D);
+			MapMarkers.pixel = 1.0 / guiScale;
 
 			fill(t, 0, 0, this.width, this.height, 0.08f, 0.08f, 0.10f, 1.0f);
 
@@ -503,7 +504,7 @@ public class GuiFullscreenMap extends GuiScreen {
 				float yaw = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks;
 				double sx = toScreenX(ppx), sy = toScreenY(ppz);
 				if (onScreen(sx, sy))
-					MapMarkers.playerArrow(t, sx, sy, Math.toRadians(yaw + 90.0), 8.0);
+					MapMarkers.playerArrow(t, sx, sy, Math.toRadians(yaw + 90.0), 6.5);
 			}
 			t.draw();
 			if (fr != null && !letterSpots.isEmpty()) {

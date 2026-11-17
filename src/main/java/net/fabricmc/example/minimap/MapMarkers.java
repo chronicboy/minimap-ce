@@ -12,14 +12,22 @@ final class MapMarkers {
 	private MapMarkers() {
 	}
 
-	// Scratch polygon for the chevron (tip, left wing, tail notch, right wing).
+	/**
+	 * One physical pixel in GUI units. Set by the caller each frame; shapes fade out over this
+	 * width at their edges (cheap anti-aliasing, needs smooth shading).
+	 */
+	static double pixel = 0.5;
+
+	// Scratch polygon for the chevron (tip, left wing, tail notch, right wing), and two grown copies.
 	private static final double[] PX = new double[4];
 	private static final double[] PY = new double[4];
 	private static final double[] OX = new double[4];
 	private static final double[] OY = new double[4];
+	private static final double[] FX = new double[4];
+	private static final double[] FY = new double[4];
 
 	/**
-	 * Directional chevron with a constant-width dark outline.
+	 * Directional chevron with a constant-width dark outline and smooth edges.
 	 *
 	 * @param angle     screen direction in radians (0 = right, PI/2 = down)
 	 * @param size      distance from the centre to the tip, in GUI pixels
@@ -27,9 +35,11 @@ final class MapMarkers {
 	 * @param facet     0 for a flat fill; otherwise the left half is brightened and
 	 *                  the right half darkened by this fraction, which reads as a fold
 	 * @param outline   outline width in GUI pixels, 0 for none
+	 * @param shadow    alpha of a soft drop shadow below the arrow, 0 for none
 	 */
 	static void arrow(Tessellator t, double x, double y, double angle, double size, double wingAngle,
-			double wingLength, double tailLength, float r, float g, float b, float facet, double outline) {
+			double wingLength, double tailLength, float r, float g, float b, float facet, double outline,
+			float shadow) {
 		double ca = Math.cos(angle), sa = Math.sin(angle);
 		double cw = Math.cos(wingAngle * Math.PI), sw = Math.sin(wingAngle * Math.PI);
 		double wl = size * wingLength, tl = size * tailLength;
@@ -43,31 +53,61 @@ final class MapMarkers {
 		PX[3] = x + (ca * cw + sa * sw) * wl;
 		PY[3] = y + (sa * cw - ca * sw) * wl;
 
-		if (outline > 0) {
-			offsetPolygon(outline);
-			// Split along tip-tail: the tail is the only concave corner.
-			t.setColorRGBA_F(0.03f, 0.03f, 0.03f, 1.0f);
-			t.addVertex(OX[0], OY[0], 0.0);
-			t.addVertex(OX[1], OY[1], 0.0);
-			t.addVertex(OX[2], OY[2], 0.0);
-			t.addVertex(OX[0], OY[0], 0.0);
-			t.addVertex(OX[2], OY[2], 0.0);
-			t.addVertex(OX[3], OY[3], 0.0);
-		}
+		// Every soft edge is centred on the true edge: half a pixel in, half a pixel out.
+		double half = pixel * 0.5;
+		if (shadow > 0)
+			solid(t, outline, 1.5, 0.0, 0.75, 0.0f, 0.0f, 0.0f, shadow);
+		if (outline > 0)
+			solid(t, outline - half, pixel, 0.0, 0.0, 0.03f, 0.03f, 0.04f, 1.0f);
+		solid(t, -half, pixel, 0.0, 0.0, r, g, b, 1.0f);
+		if (facet == 0.0f)
+			return;
 
+		// Two-tone fold, inside the soft edge (solid() left the shrunk polygon in OX/OY).
 		float hi = 1.0f + facet, lo = 1.0f - facet;
 		t.setColorRGBA_F(Math.min(1.0f, r * hi), Math.min(1.0f, g * hi), Math.min(1.0f, b * hi), 1.0f);
-		t.addVertex(PX[0], PY[0], 0.0);
-		t.addVertex(PX[1], PY[1], 0.0);
-		t.addVertex(PX[2], PY[2], 0.0);
+		t.addVertex(OX[0], OY[0], 0.0);
+		t.addVertex(OX[1], OY[1], 0.0);
+		t.addVertex(OX[2], OY[2], 0.0);
 		t.setColorRGBA_F(r * lo, g * lo, b * lo, 1.0f);
-		t.addVertex(PX[0], PY[0], 0.0);
-		t.addVertex(PX[2], PY[2], 0.0);
-		t.addVertex(PX[3], PY[3], 0.0);
+		t.addVertex(OX[0], OY[0], 0.0);
+		t.addVertex(OX[2], OY[2], 0.0);
+		t.addVertex(OX[3], OY[3], 0.0);
+	}
+
+	/**
+	 * Fills the scratch polygon grown by {@code grow}, solid inside and fading to transparent over
+	 * {@code feather} beyond that, moved by (dx, dy).
+	 */
+	private static void solid(Tessellator t, double grow, double feather, double dx, double dy, float r, float g,
+			float b, float a) {
+		offsetPolygon(grow, OX, OY);
+		offsetPolygon(grow + feather, FX, FY);
+		// Split along tip-tail: the tail is the only concave corner.
+		t.setColorRGBA_F(r, g, b, a);
+		t.addVertex(OX[0] + dx, OY[0] + dy, 0.0);
+		t.addVertex(OX[1] + dx, OY[1] + dy, 0.0);
+		t.addVertex(OX[2] + dx, OY[2] + dy, 0.0);
+		t.addVertex(OX[0] + dx, OY[0] + dy, 0.0);
+		t.addVertex(OX[2] + dx, OY[2] + dy, 0.0);
+		t.addVertex(OX[3] + dx, OY[3] + dy, 0.0);
+		for (int i = 0; i < 4; i++) {
+			int j = (i + 1) & 3;
+			t.setColorRGBA_F(r, g, b, a);
+			t.addVertex(OX[i] + dx, OY[i] + dy, 0.0);
+			t.addVertex(OX[j] + dx, OY[j] + dy, 0.0);
+			t.setColorRGBA_F(r, g, b, 0.0f);
+			t.addVertex(FX[j] + dx, FY[j] + dy, 0.0);
+			t.setColorRGBA_F(r, g, b, a);
+			t.addVertex(OX[i] + dx, OY[i] + dy, 0.0);
+			t.setColorRGBA_F(r, g, b, 0.0f);
+			t.addVertex(FX[j] + dx, FY[j] + dy, 0.0);
+			t.addVertex(FX[i] + dx, FY[i] + dy, 0.0);
+		}
 	}
 
 	/** Grows the scratch polygon outwards by a constant distance (mitred, with sharp corners capped). */
-	private static void offsetPolygon(double distance) {
+	private static void offsetPolygon(double distance, double[] outX, double[] outY) {
 		double area = 0;
 		for (int i = 0; i < 4; i++) {
 			int j = (i + 1) & 3;
@@ -79,9 +119,9 @@ final class MapMarkers {
 			double e1x = PX[i] - PX[prev], e1y = PY[i] - PY[prev];
 			double e2x = PX[next] - PX[i], e2y = PY[next] - PY[i];
 			double l1 = Math.sqrt(e1x * e1x + e1y * e1y), l2 = Math.sqrt(e2x * e2x + e2y * e2y);
-			if (l1 < 1.0e-9 || l2 < 1.0e-9) {
-				OX[i] = PX[i];
-				OY[i] = PY[i];
+			if (l1 < 1.0e-9 || l2 < 1.0e-9 || distance == 0.0) {
+				outX[i] = PX[i];
+				outY[i] = PY[i];
 				continue;
 			}
 			// Outward normals of the two edges meeting here.
@@ -92,22 +132,26 @@ final class MapMarkers {
 			double k = distance / Math.max(1.0e-6, 1.0 + n1x * n2x + n1y * n2y);
 			// A very sharp tip would otherwise grow a long spike.
 			double maxK = ml < 1.0e-6 ? 0.0 : 2.0 * distance / ml;
-			if (k > maxK)
-				k = maxK;
-			OX[i] = PX[i] + mx * k;
-			OY[i] = PY[i] + my * k;
+			if (Math.abs(k) > maxK)
+				k = Math.copySign(maxK, k); // also when shrinking
+			outX[i] = PX[i] + mx * k;
+			outY[i] = PY[i] + my * k;
 		}
 	}
 
 	/** Entity blip: small two-tone chevron pointing where the entity looks. */
 	static void entityArrow(Tessellator t, double x, double y, double angle, float r, float g, float b) {
-		arrow(t, x, y, angle, 4.2, 0.80, 0.70, 0.22, r, g, b, 0.15f, 0.8);
+		arrow(t, x, y, angle, 4.2, 0.80, 0.70, 0.22, r, g, b, 0.15f, 0.8, 0.0f);
 	}
 
-	/** The gold player arrow: outlined body plus a bright inner highlight. */
+	/**
+	 * The player: a minimal white arrowhead with a thin dark outline and a soft shadow, readable on
+	 * snow, sand, water and caves alike.
+	 *
+	 * @param size distance from the centre to the tip, in GUI pixels
+	 */
 	static void playerArrow(Tessellator t, double x, double y, double angle, double size) {
-		arrow(t, x, y, angle, size, 0.82, 0.60, 0.20, 0.65f, 0.45f, 0.05f, 0.0f, 1.0);
-		arrow(t, x, y, angle, size * 0.6, 0.82, 0.633, 0.133, 1.0f, 0.85f, 0.2f, 0.0f, 0);
+		arrow(t, x, y, angle, size, 0.78, 0.78, 0.30, 0.97f, 0.97f, 0.98f, 0.0f, 1.0, 0.35f);
 	}
 
 	/** Round blip with a dark rim. */

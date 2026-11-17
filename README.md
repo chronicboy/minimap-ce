@@ -9,7 +9,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Texture-sampled block colors** — reads Minecraft's terrain atlas for accurate colors per block variant, and follows your resource pack.
 - **Topographic shading** — slope-based lighting for terrain depth, with water that darkens as it gets deeper.
 - **Biome tinting** for grass, leaves, vines and water, blended smoothly across biome borders like the game itself does.
-- **Circular or square map** with a lit metal frame, a soft inner shadow and compass badges (north in red). Unexplored ground is faintly hatched, so it never looks like a hole in the map.
+- **Circular or square map** with a lit metal frame, a soft inner shadow, and compass letters just inside the edge like Xaero's. You are a minimal white arrow with a thin outline. Unexplored ground is faintly hatched, so it never looks like a hole in the map.
 - **North-up or rotating** — optionally keep the way you are facing at the top.
 - **Zoom** — five levels from 4x to 1/4x.
 - **Adjustable size, corner and opacity.**

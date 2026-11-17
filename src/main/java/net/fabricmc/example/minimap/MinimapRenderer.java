@@ -175,6 +175,7 @@ public class MinimapRenderer {
 		// shadow) need smooth shading, otherwise every other triangle comes out solid: "teeth".
 		GL11.glShadeModel(GL11.GL_SMOOTH);
 		pixelScale = Math.max(1, guiScale);
+		MapMarkers.pixel = 1.0 / pixelScale;
 
 		// ---- Background: unexplored ground (rotated square maps reach 1.4x farther into their corners)
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -218,7 +219,7 @@ public class MinimapRenderer {
 			addSpawnMarker(t, world);
 		if (cfg.showWaypoints)
 			addWaypointMarkers(t);
-		MapMarkers.playerArrow(t, centerX, centerY, Math.toRadians(yaw + 90.0) + viewRotation, 7.0);
+		MapMarkers.playerArrow(t, centerX, centerY, Math.toRadians(yaw + 90.0) + viewRotation, 5.5);
 		t.draw();
 
 		// ---- Textured parts of the markers: mob faces, then waypoint letters
@@ -568,49 +569,58 @@ public class MinimapRenderer {
 	private final double[] compassX = new double[4];
 	private final double[] compassY = new double[4];
 
-	/** Cardinal letters on round badges riding the frame; north in red. */
+	/** How far inside the map edge the compass letters sit (their centre), in GUI pixels. */
+	private static final double COMPASS_INSET = 6.0;
+	private static final int[] OUTLINE_DX = { -1, 0, 1, -1, 1, -1, 0, 1 };
+	private static final int[] OUTLINE_DY = { -1, -1, -1, 0, 0, 1, 1, 1 };
+
+	/**
+	 * Cardinal letters just inside the map edge, like Xaero's: plain white letters with a one-pixel
+	 * dark outline, over a faint soft shadow so they stay readable on snow and sand.
+	 */
 	private void drawCompass(Tessellator t, FontRenderer fr) {
-		double u = 1.0 / pixelScale;
-		double onBand = radius + bandWidth() * 0.5;
+		double inset = Math.min(COMPASS_INSET, radius * 0.25);
 		for (int i = 0; i < 4; i++) {
 			// Screen direction of world north is R * (0, -1), east R * (1, 0), and so on clockwise.
 			double a = i * Math.PI * 0.5;
 			double wx = Math.sin(a), wz = -Math.cos(a);
 			double dx = viewCos * wx - viewSin * wz, dy = viewSin * wx + viewCos * wz;
-			double dist = onBand;
+			double dist = radius - inset;
 			if (!circle) {
+				// Along the square's edge; turned 45 degrees the letter sits in the corner.
 				double m = Math.max(Math.abs(dx), Math.abs(dy));
 				if (m > 1.0e-6)
 					dist /= m;
 			}
-			// Centre on a physical pixel corner: the 5 x 7 letter then sits exactly in the middle.
-			compassX[i] = Math.rint((centerX + dx * dist) * pixelScale) / pixelScale;
-			compassY[i] = Math.rint((centerY + dy * dist) * pixelScale) / pixelScale;
+			compassX[i] = centerX + dx * dist;
+			compassY[i] = centerY + dy * dist;
 		}
 
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		t.startDrawing(GL11.GL_TRIANGLES);
-		double rad = 5.5;
-		for (int i = 0; i < 4; i++) {
-			double x = compassX[i], y = compassY[i];
-			disc(t, x, y + u, rad + u, 0.0f, 0.0f, 0.0f, 0.45f, 0.45f); // drop shadow
-			disc(t, x, y, rad, 0.62f, 0.65f, 0.72f, 1.0f, 1.0f); // rim
-			disc(t, x, y, rad - u, 0.07f, 0.08f, 0.10f, 1.0f, 1.0f);
-		}
+		for (int i = 0; i < 4; i++)
+			disc(t, compassX[i], compassY[i], 6.5, 0.0f, 0.0f, 0.0f, 0.42f, 0.0f);
 		t.draw();
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 		if (fr == null)
 			return;
+		double u = 1.0 / pixelScale;
 		for (int i = 0; i < 4; i++) {
 			String s = COMPASS[i];
-			// Glyphs are 7 high and their advance is one more than their width.
+			// Glyphs are 7 high and their advance is one more than their width; corner on a physical pixel.
 			double left = Math.rint((compassX[i] - (fr.getStringWidth(s) - 1) * 0.5) * pixelScale) / pixelScale;
 			double top = Math.rint((compassY[i] - 3.5) * pixelScale) / pixelScale;
-			GL11.glPushMatrix();
-			GL11.glTranslated(left, top, 0.0);
-			fr.drawString(s, 0, 0, i == 0 ? 0xFF5A5A : 0xE6E6E6);
-			GL11.glPopMatrix();
+			for (int k = 0; k < 8; k++)
+				drawAt(fr, s, left + OUTLINE_DX[k] * u, top + OUTLINE_DY[k] * u, 0x0A0A0C);
+			drawAt(fr, s, left, top, 0xFFFFFF);
 		}
+	}
+
+	private static void drawAt(FontRenderer fr, String s, double x, double y, int color) {
+		GL11.glPushMatrix();
+		GL11.glTranslated(x, y, 0.0);
+		fr.drawString(s, 0, 0, color);
+		GL11.glPopMatrix();
 	}
 
 	/** A filled disc as triangles; the rim colour alpha can differ from the centre for a soft edge. */

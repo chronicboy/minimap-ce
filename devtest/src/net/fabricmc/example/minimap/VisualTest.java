@@ -76,6 +76,7 @@ public class VisualTest {
         // a few entity blips straight from the shared marker code
         Tessellator t = Tessellator.instance;
         GL11.glDisable(GL11.GL_TEXTURE_2D); GL11.glEnable(GL11.GL_BLEND); GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); GL11.glDisable(GL11.GL_CULL_FACE); GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glShadeModel(GL11.GL_SMOOTH); // as inside drawMinimap, where the game draws these
         t.startDrawing(GL11.GL_TRIANGLES);
         double cx = mapX + size / 2.0, cy = mapY + size / 2.0;
         MapMarkers.entityArrow(t, cx - 22, cy - 14, 0.4, 0.96f, 0.22f, 0.22f);
@@ -85,6 +86,7 @@ public class VisualTest {
         MapMarkers.dot(t, cx + 2, cy + 34, 2.2, 0.96f, 0.22f, 0.22f);
         MapMarkers.dot(t, cx - 12, cy + 30, 2.2, 0.22f, 0.90f, 0.35f);
         t.draw();
+        GL11.glShadeModel(GL11.GL_FLAT);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
     }
 
