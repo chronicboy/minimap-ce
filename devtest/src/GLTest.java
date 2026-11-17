@@ -385,6 +385,43 @@ public class GLTest {
         s6.close();
         MapIO.flush(5000);
 
+        // ---------------- 14. cave layers: merge rules, folders, persistence
+        File caveDir = new File(base, "v4/caves-world/caves");
+        CaveLayers layers = new CaveLayers(caveDir);
+        check(layers.knownLayers().length == 0, "no layers yet");
+        int[] slice = new int[256];
+        int floor = MapShade.pack(0x777777, 33), wall = MapShade.pack(0x222222, 0), floor2 = MapShade.pack(0x995522, 36);
+        slice[0] = floor; slice[1] = wall; slice[2] = floor;              // column 3.. left unknown (0)
+        layers.record(5, -3, 35, slice);                                   // y 35 -> layer 2 (y 32..47)
+        int[] slice2 = new int[256];
+        slice2[0] = wall;   // wall where a floor is known -> floor kept
+        slice2[1] = floor;  // floor where only a wall was known -> floor wins
+        slice2[2] = floor2; // newer floor replaces the old one
+        slice2[3] = wall;   // wall where nothing was known -> wall
+        layers.record(5, -3, 40, slice2);
+        for (int i = 0; i < 20; i++) { MapIO.flush(2000); layers.tick(); }
+        MapStorage layer2 = layers.layer(2);
+        int base0 = 5 * 16, baseZ = -3 * 16;
+        check(layer2.dataAt(base0, baseZ) == floor, "known floor survives a wall");
+        check(layer2.dataAt(base0 + 1, baseZ) == floor, "floor replaces wall");
+        check(layer2.dataAt(base0 + 2, baseZ) == floor2, "newer floor wins");
+        check(layer2.dataAt(base0 + 3, baseZ) == wall, "wall fills unknown");
+        check(layer2.dataAt(base0 + 4, baseZ) == 0, "unknown stays unknown");
+        layers.record(5, -3, -3, slice);                                   // below zero -> layer -1
+        check(java.util.Arrays.equals(layers.knownLayers(), new int[] { -1, 2 }), "known layers " + java.util.Arrays.toString(layers.knownLayers()));
+        layers.close();
+        MapIO.flush(5000);
+        check(new File(caveDir, "y32/r.0.-1.mmr").isFile() && new File(caveDir, "y-16/r.0.-1.mmr").isFile(), "layer folders written");
+        CaveLayers reopened = new CaveLayers(caveDir);
+        check(java.util.Arrays.equals(reopened.knownLayers(), new int[] { -1, 2 }), "layers found again after reopening");
+        MapStorage again2 = reopened.layer(2);
+        for (int i = 0; i < 50 && !again2.exists(0, -1); i++) { MapIO.flush(2000); reopened.tick(); }
+        MapRegion rr = again2.request(0, -1, false);
+        for (int i = 0; i < 50 && (rr == null || !rr.isReady()); i++) { MapIO.flush(2000); reopened.tick(); rr = again2.request(0, -1, false); }
+        check(again2.dataAt(base0 + 2, baseZ) == floor2 && again2.dataAt(base0 + 3, baseZ) == wall, "cave layer persisted");
+        reopened.close();
+        MapIO.flush(5000);
+
         s2.close();
         glErr("end");
         pb.destroy();

@@ -16,6 +16,11 @@ import java.util.Map;
  * only those, a few per frame within a time budget, nearest to the player first.
  */
 public final class MapUpdater implements IWorldAccess {
+	/** Told about every chunk this updater samples (used to save cave slices). */
+	public interface SampleListener {
+		void sampled(int chunkX, int chunkZ, int refY, int[] data);
+	}
+
 	private static final int PICK = 32;
 	private static final int BLOCK_CHANGE_DELAY_TICKS = 3;
 	private static final int CHUNK_LOAD_DELAY_TICKS = 1;
@@ -41,6 +46,7 @@ public final class MapUpdater implements IWorldAccess {
 	private int lastChunkX = Integer.MIN_VALUE, lastChunkZ = Integer.MIN_VALUE;
 	private boolean active = true;
 	private boolean enabled = true;
+	private SampleListener listener;
 
 	public MapUpdater(World world, MapStorage storage, boolean caveMode) {
 		this(world, storage, caveMode, caveMode);
@@ -68,6 +74,10 @@ public final class MapUpdater implements IWorldAccess {
 			lastChunkZ = chunk(player.posZ);
 			markAround(lastChunkX, lastChunkZ, CAVE_RADIUS);
 		}
+	}
+
+	public void setSampleListener(SampleListener listener) {
+		this.listener = listener;
 	}
 
 	/** Points the updater at a different map (used to restart the live cave view from scratch). */
@@ -217,8 +227,11 @@ public final class MapUpdater implements IWorldAccess {
 			int found = caveMode
 					? ChunkSampler.sampleCave(chunk, world, scratch, accumulate ? region.chunk(cx, cz) : null, refY)
 					: ChunkSampler.sampleSurface(chunk, world, scratch);
-			if (found > 0)
+			if (found > 0) {
 				storage.putChunk(cx, cz, scratch);
+				if (listener != null)
+					listener.sampled(cx, cz, refY, scratch);
+			}
 			sampled++;
 
 			if (System.nanoTime() - start > budgetNanos) {

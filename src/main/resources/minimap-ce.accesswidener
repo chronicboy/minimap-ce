@@ -13,3 +13,4 @@ accessible	field	net/minecraft/src/ServerData	serverIP	Ljava/lang/String;
 
 # Render class (entity skins for the radar head icons)
 accessible	method	net/minecraft/src/Render	getEntityTexture	(Lnet/minecraft/src/Entity;)Lnet/minecraft/src/ResourceLocation;
+accessible	field	net/minecraft/src/RendererLivingEntity	mainModel	Lnet/minecraft/src/ModelBase;

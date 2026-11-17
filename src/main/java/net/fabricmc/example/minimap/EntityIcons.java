@@ -9,6 +9,7 @@ import net.minecraft.src.EntityCow;
 import net.minecraft.src.EntityCreeper;
 import net.minecraft.src.EntityEnderman;
 import net.minecraft.src.EntityGhast;
+import net.minecraft.src.EntityHorse;
 import net.minecraft.src.EntityIronGolem;
 import net.minecraft.src.EntityLivingBase;
 import net.minecraft.src.EntityMagmaCube;
@@ -25,10 +26,13 @@ import net.minecraft.src.EntityWitch;
 import net.minecraft.src.EntityWolf;
 import net.minecraft.src.EntityZombie;
 import net.minecraft.src.Minecraft;
+import net.minecraft.src.ModelBiped;
 import net.minecraft.src.Render;
+import net.minecraft.src.RendererLivingEntity;
 import net.minecraft.src.RenderManager;
 import net.minecraft.src.ResourceLocation;
 import net.minecraft.src.Tessellator;
+import btw.entity.mob.DireWolfEntity;
 import org.lwjgl.opengl.GL11;
 
 import java.util.HashMap;
@@ -37,9 +41,10 @@ import java.util.HashMap;
  * Mob head icons for the entity radar: the face is cut straight out of the
  * mob's own skin texture, so it follows resource packs and random-mob skins.
  *
- * Where the face sits depends on the mob's model, so there is a small table of
- * known layouts. Anything not in the table (or with an unusual model) simply
- * has no head icon and is drawn as a coloured dot instead.
+ * Where the face sits depends on the mob's model, so there is a table of known
+ * layouts (every vanilla and BTW mob the radar shows). Unknown mobs drawn with
+ * a humanoid model use the standard head; anything else gets a coloured dot.
+ * The layouts are checked against the game's real skins by devtest's HeadSheet.
  */
 final class EntityIcons {
 	/** A face rectangle, in texels of a texture that is {@code unitsWide} texels wide. */
@@ -66,6 +71,8 @@ final class EntityIcons {
 
 	private static final Head NONE = new Head(0, 0, 0, 0);
 	private static final Head CUBE_HEAD = new Head(8, 8, 8, 8);
+	/** Zombie villagers share EntityZombie but wear a villager-shaped head lower in their skin. */
+	private static final Head ZOMBIE_VILLAGER = new Head(8, 40, 8, 10);
 
 	/** First match wins, so subclasses that need different treatment come before their parents. */
 	private static final Object[][] RULES = {
@@ -89,6 +96,9 @@ final class EntityIcons {
 			{ EntityWitch.class, new Head(8, 8, 8, 10) },
 			{ EntityIronGolem.class, new Head(128.0f, 8, 8, 8, 10, -1, -1) },
 			{ EntityGhast.class, new Head(16, 16, 16, 16) },
+			// Horses, donkeys and mules: the side of the head (eye and cheek) reads best at this size.
+			{ EntityHorse.class, new Head(0, 20, 7, 5) },
+			{ DireWolfEntity.class, new Head(4, 4, 6, 6) },
 	};
 
 	private static final HashMap<Class<?>, Head> byClass = new HashMap<Class<?>, Head>();
@@ -114,11 +124,26 @@ final class EntityIcons {
 		return head == NONE ? null : head;
 	}
 
+	/** For devtest's HeadSheet. */
+	static Head zombieVillagerHead() {
+		return ZOMBIE_VILLAGER;
+	}
+
 	static Head forEntity(Entity entity) {
-		// Zombie villagers use a different head shape than the texture rule assumes.
 		if (entity instanceof EntityZombie && ((EntityZombie) entity).isVillager())
-			return null;
-		return forClass(entity.getClass());
+			return ZOMBIE_VILLAGER;
+		Class<?> type = entity.getClass();
+		if (!byClass.containsKey(type) && forClass(type) == null) {
+			// Not in the table: a mob drawn as a humanoid has the standard head layout.
+			try {
+				Render render = RenderManager.instance.getEntityRenderObject(entity);
+				if (render instanceof RendererLivingEntity
+						&& ((RendererLivingEntity) render).mainModel instanceof ModelBiped)
+					byClass.put(type, CUBE_HEAD);
+			} catch (Throwable ignored) {
+			}
+		}
+		return forClass(type);
 	}
 
 	/** The skin the game would render this entity with, or null. */

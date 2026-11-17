@@ -65,8 +65,25 @@ public class MinimapRenderer {
 	private long lastClockSecond = Long.MIN_VALUE;
 	private String cachedCoordStr = "";
 	private String cachedBiomeName = "";
+	private String biomeText = "";
 	private int lastCoordX = Integer.MIN_VALUE, lastCoordY = Integer.MIN_VALUE, lastCoordZ = Integer.MIN_VALUE;
 	private BiomeGenBase lastBiome = null;
+
+	/** True while the settings screen draws the minimap as a preview: show everything there is to see. */
+	private boolean preview;
+
+	public void setPreview(boolean preview) {
+		this.preview = preview;
+	}
+
+	/** Whether mobs are shown right now (radar on, and Tab held unless it is set to always show). */
+	private boolean radarVisible(Minecraft mc) {
+		MapConfig cfg = MapConfig.instance;
+		if (!cfg.showEntities)
+			return false;
+		return preview || cfg.entityRadarMode == MapConfig.RADAR_ALWAYS
+				|| (mc.gameSettings != null && mc.gameSettings.keyBindPlayerList.pressed);
+	}
 
 	public void renderMinimap(Minecraft mc, World world, EntityPlayer player, int screenWidth, int screenHeight,
 			int guiScale, float partialTicks) {
@@ -190,7 +207,7 @@ public class MinimapRenderer {
 			EntityIcons.clearCache();
 		}
 		t.startDrawing(GL11.GL_TRIANGLES);
-		if (cfg.showEntities)
+		if (radarVisible(mc))
 			addEntityMarkers(t, world, player, partialTicks);
 		if (cfg.showSpawnWaypoint && SpawnTracker.instance.hasSpawn())
 			addSpawnMarker(t, world);
@@ -579,7 +596,8 @@ public class MinimapRenderer {
 
 		int clockW = (int) (fr.getStringWidth(cachedClockStr) * textScale) + 8;
 		int coordW = (int) (fr.getStringWidth(cachedCoordStr) * textScale) + 8;
-		int biomeW = (int) (fr.getStringWidth(cachedBiomeName) * textScale) + 8;
+		biomeText = MapEngine.INSTANCE.isCaveViewActive() ? cachedBiomeName + " (Caves)" : cachedBiomeName;
+		int biomeW = (int) (fr.getStringWidth(biomeText) * textScale) + 8;
 		int lineH = (int) (12 * textScale);
 		int clockH = lineH;
 		int maxInfoW = Math.max(showCoords ? coordW : 0, showBiome ? biomeW : 0);
@@ -631,7 +649,7 @@ public class MinimapRenderer {
 			}
 			if (showBiome) {
 				int w = biomeW - 8;
-				fr.drawStringWithShadow(cachedBiomeName, (int) ((infoX + (maxInfoW - w) / 2) * invScale),
+				fr.drawStringWithShadow(biomeText, (int) ((infoX + (maxInfoW - w) / 2) * invScale),
 						(int) (textY * invScale), 0xAAAAAA);
 			}
 		}

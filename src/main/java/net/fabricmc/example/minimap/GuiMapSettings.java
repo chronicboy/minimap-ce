@@ -171,7 +171,8 @@ public class GuiMapSettings extends GuiScreen {
 			add(BTN_CAVE, left, y, w, h,
 					"When there is rock above you, the minimap shows the caves at your level instead of the surface.");
 		} else if (page == PAGE_MARKERS) {
-			add(BTN_ENTITIES, left, y, w, h, "Show nearby mobs and players on the minimap.");
+			add(BTN_ENTITIES, left, y, w, h, "Mobs and players on the minimap. Hold shows them only while the "
+					+ "player list key is held, so they do not clutter the map; Always keeps them on.");
 			add(BTN_ENTITY_ICONS, right, y, w, h,
 					"Heads shows each mob's face. Arrows shows which way it is looking. Dots is the plainest.");
 			y += gap;
@@ -221,8 +222,13 @@ public class GuiMapSettings extends GuiScreen {
 				return "Rotation: " + (cfg.rotateMinimap ? "Follows Player" : "North Up");
 			case BTN_PADDING:
 				return toggle("Padding", cfg.useMinimapPadding);
-			case BTN_ENTITIES:
-				return toggle("Entity Radar", cfg.showEntities);
+			case BTN_ENTITIES: {
+				if (!cfg.showEntities)
+					return "Entity Radar: \u00a7cOFF";
+				if (cfg.entityRadarMode == MapConfig.RADAR_ALWAYS)
+					return "Entity Radar: \u00a7aAlways";
+				return "Entity Radar: \u00a7eHold " + holdKeyName();
+			}
 			case BTN_ENTITY_ICONS: {
 				String[] styles = { "Heads", "Arrows", "Dots" };
 				return "Entity Icons: " + styles[Math.max(0, Math.min(2, cfg.entityIconStyle))];
@@ -286,9 +292,15 @@ public class GuiMapSettings extends GuiScreen {
 			case BTN_PADDING:
 				cfg.useMinimapPadding = !cfg.useMinimapPadding;
 				break;
-			case BTN_ENTITIES:
-				cfg.showEntities = !cfg.showEntities;
+			case BTN_ENTITIES: {
+				// Cycle Hold -> Always -> Off (shift: the other way).
+				int state = !cfg.showEntities ? 2 : (cfg.entityRadarMode == MapConfig.RADAR_ALWAYS ? 1 : 0);
+				state = (state + (back ? 2 : 1)) % 3;
+				cfg.showEntities = state != 2;
+				if (state != 2)
+					cfg.entityRadarMode = state == 1 ? MapConfig.RADAR_ALWAYS : MapConfig.RADAR_HOLD_KEY;
 				break;
+			}
 			case BTN_ENTITY_ICONS:
 				cfg.entityIconStyle = (cfg.entityIconStyle + (back ? 2 : 1)) % 3;
 				break;
@@ -403,6 +415,7 @@ public class GuiMapSettings extends GuiScreen {
 	private void drawLiveMinimap(float partialTicks) {
 		int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
 		try {
+			BTWNavigator.minimapRenderer.setPreview(true);
 			BTWNavigator.minimapRenderer.renderMinimap(this.mc, this.mc.theWorld, this.mc.thePlayer, this.width,
 					this.height, guiScale, partialTicks);
 		} catch (Throwable t) {
@@ -411,9 +424,24 @@ public class GuiMapSettings extends GuiScreen {
 			} catch (Throwable ignored) {
 			}
 		} finally {
+			BTWNavigator.minimapRenderer.setPreview(false);
 			GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
 			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 		}
+	}
+
+	/** Name of the player-list key (Tab unless rebound), e.g. "Tab". */
+	private static String holdKeyName() {
+		try {
+			String name = Keyboard.getKeyName(
+					net.minecraft.src.Minecraft.getMinecraft().gameSettings.keyBindPlayerList.keyCode);
+			if (name != null && name.length() > 1)
+				return name.charAt(0) + name.substring(1).toLowerCase();
+			if (name != null)
+				return name;
+		} catch (Throwable ignored) {
+		}
+		return "Tab";
 	}
 
 	private static String toggle(String name, boolean value) {

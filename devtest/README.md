@@ -13,7 +13,7 @@ bash devtest/run-tests.sh
 | --- | --- |
 | `pure` | Region files round-trip, are replaced atomically, reject corrupt/truncated data, and read 3.x files. Shading maths. Clipped map pieces tile the map shape exactly. |
 | `sampler` | Chunk sampling (surface, water depth, Nether slices, x/z/metadata indexing) against real `Chunk` objects, with a stand-in colour table. |
-| `gl` | The region store and map drawing on an offscreen OpenGL surface: every pixel is compared with what the synthetic world says should be there (1:1, zoomed, rotated, in-between zoom and rotation through the sharp shader, circle mask, opacity, live chunk updates, relief across region borders, zoomed-out averaging, far-zoom overview, 3.x import, saving). |
+| `gl` | The region store and map drawing on an offscreen OpenGL surface: every pixel is compared with what the synthetic world says should be there (1:1, zoomed, rotated, in-between zoom and rotation through the sharp shader, circle mask, opacity, live chunk updates, relief across region borders, zoomed-out averaging, far-zoom overview, 3.x import, saving, cave layer merging and persistence). |
 | `visual` | Renders the real minimap code over generated terrain to `build/devtest/run-*/visual/minimaps.png` (plus a zoomed `crop.png`) so the look can be checked by eye. It starts from the OpenGL state the game leaves behind (flat shading and so on), which is what catches state-dependent glitches. |
 
 | `heads` | Cuts every mob face out of the game's skin textures with the radar's own table and writes `heads.png` next to the picture above, to check the table by eye. |

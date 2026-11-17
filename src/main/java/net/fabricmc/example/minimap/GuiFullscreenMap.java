@@ -1,5 +1,6 @@
 package net.fabricmc.example.minimap;
 
+import net.fabricmc.example.minimap.engine.CaveLayers;
 import net.fabricmc.example.minimap.engine.MapDraw;
 import net.fabricmc.example.minimap.engine.MapEngine;
 import net.fabricmc.example.minimap.engine.MapStorage;
@@ -83,6 +84,15 @@ public class GuiFullscreenMap extends GuiScreen {
 	private final double[] rectX = new double[4];
 	private final double[] rectY = new double[4];
 
+	// Cave layers (current dimension only). SURFACE means the normal map.
+	private static final int SURFACE = Integer.MIN_VALUE;
+	private int viewLayer = SURFACE;
+	/** Show whichever layer the player is in, as they move (until a layer is picked by hand). */
+	private boolean layerFollowsPlayer = true;
+	private boolean layerPanelVisible;
+	private int panelX, panelY, panelW, panelH;
+	private static final int PANEL_ARROW_W = 14;
+
 	// Waypoint tile letters, queued while the tiles themselves are batched.
 	private final List<int[]> letterSpots = new ArrayList<int[]>();
 	private final List<String> letterTexts = new ArrayList<String>();
@@ -155,8 +165,15 @@ public class GuiFullscreenMap extends GuiScreen {
 	}
 
 	private MapStorage storage() {
-		if (viewingPlayerDimension())
+		if (viewingPlayerDimension()) {
+			CaveLayers layers = MapEngine.INSTANCE.caveLayers();
+			if (viewLayer != SURFACE && layers != null) {
+				MapStorage layer = layers.layer(viewLayer);
+				if (layer != null)
+					return layer;
+			}
 			return MapEngine.INSTANCE.storage();
+		}
 		if (auxStorage == null)
 			auxStorage = MapEngine.INSTANCE.openDimension(viewDimension);
 		return auxStorage;
@@ -190,6 +207,8 @@ public class GuiFullscreenMap extends GuiScreen {
 		}
 
 		viewDimension = dim;
+		viewLayer = SURFACE;
+		layerFollowsPlayer = dim == playerDimension;
 		if (dim != playerDimension) {
 			crossDimWaypoints = WaypointManager.instance.loadWaypointsForDim(dim);
 			follow = false;
@@ -347,7 +366,10 @@ public class GuiFullscreenMap extends GuiScreen {
 			crossDimWaypoints = null;
 			follow = true;
 			menuOpen = false;
+			viewLayer = SURFACE;
+			layerFollowsPlayer = true;
 		}
+		updateLayer(player);
 
 		// Sub-pixel mouse position, so dragging is as smooth as the display allows.
 		double mx = Mouse.getX() * (double) this.width / mc.displayWidth;
@@ -478,6 +500,10 @@ public class GuiFullscreenMap extends GuiScreen {
 			fill(t, 0, mapBottom, this.width, this.height, 0.05f, 0.05f, 0.07f, 0.94f);
 			fill(t, 0, mapBottom, this.width, mapBottom + 1, 0.30f, 0.30f, 0.35f, 0.8f);
 
+			// Cave layer panel (shapes; its text is drawn with the other text below)
+			if (fr != null)
+				drawLayerPanelShapes(t, fr, mx, my);
+
 			// Active dimension underline
 			if (fr != null) {
 				int tabX = tabStartX(fr);
@@ -508,6 +534,8 @@ public class GuiFullscreenMap extends GuiScreen {
 					tabX += fr.getStringWidth(DIM_NAMES[i]) + TAB_GAP;
 				}
 
+				if (layerPanelVisible)
+					drawLayerPanelText(fr);
 				drawBottomBar(fr, storage, player, mx, my, mapBottom, complete);
 
 				if (!menuOpen) {
@@ -542,6 +570,116 @@ public class GuiFullscreenMap extends GuiScreen {
 		}
 	}
 
+	// ------------------------------------------------------------- cave layers
+
+	/** Surface first, then every known cave layer from the highest down. */
+	private int[] layerChoices() {
+		CaveLayers layers = MapEngine.INSTANCE.caveLayers();
+		int[] known = layers != null ? layers.knownLayers() : new int[0];
+		Integer mine = MapEngine.INSTANCE.currentCaveLayer(this.mc.thePlayer);
+		boolean addMine = mine != null;
+		for (int k : known)
+			if (mine != null && k == mine)
+				addMine = false;
+		int[] out = new int[1 + known.length + (addMine ? 1 : 0)];
+		out[0] = SURFACE;
+		int n = 1;
+		int[] all = known;
+		if (addMine) {
+			all = java.util.Arrays.copyOf(known, known.length + 1);
+			all[known.length] = mine;
+			java.util.Arrays.sort(all);
+		}
+		for (int i = all.length - 1; i >= 0; i--)
+			out[n++] = all[i];
+		return out;
+	}
+
+	private void updateLayer(EntityPlayer player) {
+		layerPanelVisible = false;
+		if (!viewingPlayerDimension() || MapEngine.INSTANCE.caveLayers() == null)
+			return;
+		if (layerFollowsPlayer) {
+			Integer mine = MapEngine.INSTANCE.currentCaveLayer(player);
+			viewLayer = mine != null ? mine : SURFACE;
+		}
+		layerPanelVisible = viewLayer != SURFACE || layerChoices().length > 1;
+	}
+
+	/** -1 = towards the surface, 1 = deeper. */
+	private void stepLayer(int direction) {
+		if (!viewingPlayerDimension() || MapEngine.INSTANCE.caveLayers() == null)
+			return;
+		int[] choices = layerChoices();
+		int index = 0;
+		for (int i = 0; i < choices.length; i++)
+			if (choices[i] == viewLayer)
+				index = i;
+		int next = Math.max(0, Math.min(choices.length - 1, index + direction));
+		if (choices[next] != viewLayer) {
+			viewLayer = choices[next];
+			layerFollowsPlayer = false;
+			menuOpen = false;
+		}
+	}
+
+	private String layerLabel() {
+		if (viewLayer == SURFACE)
+			return "Surface";
+		int bottom = CaveLayers.bottomOf(viewLayer);
+		return "Caves  y " + bottom + " to " + (bottom + CaveLayers.LAYER_HEIGHT - 1);
+	}
+
+	private boolean inPanel(double x, double y) {
+		return x >= panelX && x < panelX + panelW && y >= panelY && y < panelY + panelH;
+	}
+
+	private void drawLayerPanelShapes(Tessellator t, FontRenderer fr, double mx, double my) {
+		if (!layerPanelVisible)
+			return;
+		panelW = PANEL_ARROW_W * 2 + fr.getStringWidth("Caves  y 240 to 255") + 10;
+		panelH = 14;
+		panelX = this.width - panelW - 6;
+		panelY = TOP_BAR_HEIGHT + 6;
+		int[] choices = layerChoices();
+		boolean canUp = choices[0] != viewLayer;
+		boolean canDown = choices[choices.length - 1] != viewLayer;
+
+		fill(t, panelX - 1, panelY - 1, panelX + panelW + 1, panelY + panelH + 1, 0.30f, 0.30f, 0.36f, 0.9f);
+		fill(t, panelX, panelY, panelX + panelW, panelY + panelH, 0.05f, 0.05f, 0.08f, 0.9f);
+		boolean hover = inPanel(mx, my) && !menuOpen;
+		if (hover) {
+			int x0 = mx < panelX + PANEL_ARROW_W ? panelX
+					: (mx >= panelX + panelW - PANEL_ARROW_W ? panelX + panelW - PANEL_ARROW_W : panelX + PANEL_ARROW_W);
+			int x1 = x0 == panelX + PANEL_ARROW_W ? panelX + panelW - PANEL_ARROW_W : x0 + PANEL_ARROW_W;
+			fill(t, x0, panelY, x1, panelY + panelH, 0.25f, 0.40f, 0.75f, 0.6f);
+		}
+		// Up (towards the surface) on the left, down (deeper) on the right.
+		t.startDrawing(GL11.GL_TRIANGLES);
+		float upC = canUp ? 0.95f : 0.35f, downC = canDown ? 0.95f : 0.35f;
+		double cy = panelY + panelH / 2.0;
+		double ux = panelX + PANEL_ARROW_W / 2.0;
+		t.setColorRGBA_F(upC, upC, upC, 1.0f);
+		t.addVertex(ux, cy - 3, 0.0);
+		t.addVertex(ux - 4, cy + 2.5, 0.0);
+		t.addVertex(ux + 4, cy + 2.5, 0.0);
+		double dx = panelX + panelW - PANEL_ARROW_W / 2.0;
+		t.setColorRGBA_F(downC, downC, downC, 1.0f);
+		t.addVertex(dx - 4, cy - 2.5, 0.0);
+		t.addVertex(dx, cy + 3, 0.0);
+		t.addVertex(dx + 4, cy - 2.5, 0.0);
+		t.draw();
+	}
+
+	private void drawLayerPanelText(FontRenderer fr) {
+		String label = layerLabel();
+		Integer mine = MapEngine.INSTANCE.currentCaveLayer(this.mc.thePlayer);
+		boolean playersLayer = viewLayer == SURFACE ? mine == null : (mine != null && mine == viewLayer);
+		int color = playersLayer ? 0xFFE070 : 0xFFFFFF;
+		int textW = fr.getStringWidth(label);
+		fr.drawStringWithShadow(label, panelX + (panelW - textW) / 2, panelY + 3, color);
+	}
+
 	private boolean onScreen(double sx, double sy) {
 		return sx >= -8 && sx <= this.width + 8 && sy >= TOP_BAR_HEIGHT - 8
 				&& sy <= this.height - BOTTOM_BAR_HEIGHT + 8;
@@ -559,7 +697,9 @@ public class GuiFullscreenMap extends GuiScreen {
 		int textY = mapBottom + 5;
 
 		String left;
-		if (inMapArea(mx, my)) {
+		if (layerPanelVisible && inPanel(mx, my)) {
+			left = "PgUp/PgDn: layer \u00a78|\u00a7r click the name: follow your level";
+		} else if (inMapArea(mx, my)) {
 			int wx = (int) Math.floor(toWorldX(mx));
 			int wz = (int) Math.floor(toWorldZ(my));
 			int h = storage != null ? storage.dataAt(wx, wz) >>> 24 : 0;
@@ -842,6 +982,10 @@ public class GuiFullscreenMap extends GuiScreen {
 				follow = true;
 				zoomAnchored = false;
 			}
+		} else if (keyCode == Keyboard.KEY_PRIOR) {
+			stepLayer(-1);
+		} else if (keyCode == Keyboard.KEY_NEXT) {
+			stepLayer(1);
 		} else if (keyCode == Keyboard.KEY_EQUALS || keyCode == Keyboard.KEY_ADD) {
 			zoom(1, midX(), midY());
 		} else if (keyCode == Keyboard.KEY_MINUS || keyCode == Keyboard.KEY_SUBTRACT) {
@@ -879,6 +1023,17 @@ public class GuiFullscreenMap extends GuiScreen {
 		}
 		if (!inMapArea(mouseX, mouseY))
 			return;
+		if (layerPanelVisible && inPanel(mouseX, mouseY)) {
+			if (mouseButton == 0) {
+				if (mouseX < panelX + PANEL_ARROW_W)
+					stepLayer(-1);
+				else if (mouseX >= panelX + panelW - PANEL_ARROW_W)
+					stepLayer(1);
+				else
+					layerFollowsPlayer = true;
+			}
+			return;
+		}
 
 		if (mouseButton == 1) {
 			openMenu(mouseX, mouseY);

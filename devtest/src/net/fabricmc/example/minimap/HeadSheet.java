@@ -49,13 +49,19 @@ public class HeadSheet {
                 { net.minecraft.src.EntityVillager.class, "entity/mob/villager/" },
                 { net.minecraft.src.EntityWitch.class, "entity/witch.png" },
                 { net.minecraft.src.EntityIronGolem.class, "entity/iron_golem.png" },
+                { net.minecraft.src.EntityHorse.class, "entity/horse/horse_" },
+                { net.minecraft.src.EntityHorse.class, "entity/horse/donkey" },
+                { net.minecraft.src.EntityHorse.class, "entity/horse/mule" },
+                { net.minecraft.src.EntityHorse.class, "entity/mob/horse/" },
+                { btw.entity.mob.DireWolfEntity.class, "entity/mob/wolf/beast.png" },
+                { "zombie_villager", "entity/zombie/zombie_villager.png" },
         };
 
         List<BufferedImage> faces = new ArrayList<BufferedImage>();
         List<String> names = new ArrayList<String>();
         try (ZipFile zip = new ZipFile(a[0])) {
             for (Object[] mob : mobs) {
-                EntityIcons.Head head = EntityIcons.forClass((Class<?>) mob[0]);
+                EntityIcons.Head head = mob[0] instanceof Class ? EntityIcons.forClass((Class<?>) mob[0]) : EntityIcons.zombieVillagerHead();
                 String key = (String) mob[1];
                 Enumeration<? extends ZipEntry> en = zip.entries();
                 while (en.hasMoreElements()) {
@@ -63,7 +69,7 @@ public class HeadSheet {
                     String n = e.getName();
                     // default look only (skip the alternative "programmer art" set), vanilla and BTW namespaces
                     if (!n.startsWith("assets/") || !n.endsWith(".png") || !n.contains("/textures/" + key)) continue;
-                    if (n.contains("_eyes") || n.contains("collar") || n.contains("_fur") || n.contains("saddle") || n.contains("armor")) continue;
+                    if (n.contains("_eyes") || n.contains("collar") || n.contains("_fur") || n.contains("saddle") || n.contains("armor") || n.contains("markings")) continue;
                     BufferedImage skin = ImageIO.read(zip.getInputStream(e));
                     if (skin == null || head == null) continue;
                     // Same maths as EntityIcons.drawHead: table units -> real texels through the image's own shape.

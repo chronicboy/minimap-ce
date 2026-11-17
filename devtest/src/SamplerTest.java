@@ -151,6 +151,14 @@ public class SamplerTest {
         for (int i = 0; i < 1000; i++) ChunkSampler.sampleSurface(chunk, null, out);
         double usWater = (System.nanoTime() - t0) / 1000.0 / 1000.0;
         System.out.printf("sampleSurface: %.1f us per land chunk, %.1f us per deep-ocean chunk%n", us, usWater);
+        // cave slice through solid rock with a tunnel network (the live cave view's typical case)
+        newChunk(); fill(0, 80, STONE);
+        for (int y = 30; y <= 33; y++) for (int z = 0; z < 16; z++) { set(7, y, z, 0, 0); set(8, y, z, 0, 0); set(z, y, 3, 0, 0); }
+        for (int i = 0; i < 300; i++) ChunkSampler.sampleCave(chunk, null, out, null, 31);
+        t0 = System.nanoTime();
+        for (int i = 0; i < 1000; i++) ChunkSampler.sampleCave(chunk, null, out, null, 31);
+        double usCave = (System.nanoTime() - t0) / 1000.0 / 1000.0;
+        System.out.printf("sampleCave: %.1f us per chunk -> a full 17x17 cave view in %.1f ms (spread over frames)%n", usCave, usCave * 289 / 1000.0);
 
         System.out.println(checks + " checks, " + (fails == 0 ? "ALL SAMPLER TESTS PASSED" : fails + " FAILURES"));
         System.exit(fails == 0 ? 0 : 1);

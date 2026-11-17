@@ -22,6 +22,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 ### Full-Screen Map
 - **Explore everything you have seen** — drag to pan, scroll to zoom towards the cursor, from 16 pixels per block out to an overview of your whole explored world.
 - **Persistent terrain** — explored areas are saved per world and dimension, in the background, and stay on the map when you are far away.
+- **Underground layers** — caves you explore are saved in 16-block height layers. Underground, the map opens on your layer; the panel at the top right (or PgUp/PgDn) moves between the surface and every explored layer.
 - **Cross-dimension viewing** — browse the Overworld, Nether and End maps from tabs without travelling there.
 - **Right-click menu** — create, edit, hide or delete waypoints, teleport, or re-center on yourself.
 - **Cursor readout** — coordinates and ground height under the mouse.
@@ -40,7 +41,8 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Per-world saving** — separate lists for every singleplayer world and multiplayer server.
 
 ### Entity Radar
-- **Mob heads** — nearby mobs and players show their own face, cut from their skin, so it follows resource packs and BTW's varied animal skins.
+- **Hold Tab to show** — mobs appear while you hold the player list key (Tab), so they never clutter the map; set Entity Radar to Always to keep them on.
+- **Mob heads** — nearby mobs and players show their own face, cut from their skin, so it follows resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one, horses included.
 - **Arrows or dots** if you prefer — color coded (red hostile, green passive animals and villagers, blue players, yellow anything else), and arrows point where the mob is looking.
 - Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
 
@@ -58,6 +60,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 | `B` | Open waypoint manager |
 | `N` | New waypoint where you stand |
 | `M` | Toggle minimap |
+| `Tab` (hold) | Show mobs on the minimap (when Entity Radar is set to Hold) |
 | `F` | Toggle entity radar |
 | `=` / `-` | Zoom minimap in / out (numpad +/- also work) |
 | `]` | Increase minimap size |
@@ -73,6 +76,7 @@ On the full-screen map:
 | `Scroll` or `=` / `-` | Zoom |
 | `WASD` / arrow keys | Pan |
 | `C` | Follow the player again |
+| `PgUp` / `PgDn` | Cave layer up / down (towards the surface / deeper) |
 | `Double-click` | New waypoint |
 | `Right-click` | Context menu |
 | `Esc` or `J` | Close |
@@ -81,7 +85,7 @@ On the full-screen map:
 Press `O` in game. The minimap stays visible behind the screen and updates as you change things; hover an option for an explanation.
 
 - **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding, cave mode.
-- **Markers & Info** — entity radar and its icon style, waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
+- **Markers & Info** — entity radar (Hold Tab, Always or Off) and its icon style, waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
 - **World Map** — whether the full-screen map pauses the game, whether teleport options are shown, and map pixel scaling (Sharp, or Nearest if your graphics driver has trouble with Sharp).
 
 ## Configuration
@@ -91,7 +95,7 @@ Everything lives in your game folder under `config/`:
 | --- | --- |
 | `minimap-ce.conf` | All settings. Safe to edit while the game is closed. |
 | `minimap-ce-waypoints/` | Waypoints (one JSON file per world and dimension) and the recorded spawn point. |
-| `minimap-ce-maps-v4/` | Explored map data, one folder per world and dimension. Delete a folder to reset that map. |
+| `minimap-ce-maps-v4/` | Explored map data, one folder per world and dimension, with cave layers in its `caves/` subfolder. Delete a folder to reset that map. |
 
 The teleport command is the one setting without a button. In `minimap-ce.conf`:
 
@@ -104,7 +108,7 @@ teleportCommand="/tp {x} {y} {z}"
 ## Upgrading from 3.x
 - Your waypoints, settings and explored maps carry over. Old map data in `config/minimap-ce-maps-v3/` is imported as you look at it and is never changed, so you can go back to a 3.x jar and still have your old map.
 - Areas explored with 3.x keep their old colors until you visit them again.
-- The entity radar shows mob heads and waypoints show lettered tiles by default; the 3.x arrows and small squares are one click away in the settings.
+- The entity radar shows mob heads, only while Tab is held, and waypoints show lettered tiles by default; the 3.x look (always-on arrows, small squares) is a few clicks away in the settings.
 
 ## Installation
 1. Install **Better Than Wolves CE 3.0.0 or later** with Fabric Loader 0.14.19 or later.

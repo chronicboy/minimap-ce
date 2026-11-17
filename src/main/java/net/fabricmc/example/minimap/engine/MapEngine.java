@@ -47,6 +47,7 @@ public final class MapEngine {
 	private MapUpdater caveUpdater;
 	private boolean caveActive;
 	private int caveVotes;
+	private CaveLayers caveLayers;
 	private int framesSinceTick;
 	private int colorGeneration = 0;
 	private int tickCounter;
@@ -67,6 +68,18 @@ public final class MapEngine {
 
 	public boolean isCaveViewActive() {
 		return caveActive && caveStorage != null;
+	}
+
+	/** Saved cave layers of the current world, or null where there are none (Nether, End). */
+	public CaveLayers caveLayers() {
+		return caveLayers;
+	}
+
+	/** The cave layer the player is in while the cave view is on, otherwise null. */
+	public Integer currentCaveLayer(EntityPlayer player) {
+		if (!isCaveViewActive() || player == null)
+			return null;
+		return CaveLayers.layerOf((int) Math.floor(player.posY));
 	}
 
 	public String worldId() {
@@ -100,6 +113,8 @@ public final class MapEngine {
 				caveStorage.tick();
 				caveUpdater.tick(player);
 			}
+			if (caveLayers != null)
+				caveLayers.tick();
 
 			// Chunks can arrive in the same network batch as the login, before the listener exists and
 			// before the player's real position is known. Two late scans catch whatever that missed;
@@ -183,8 +198,9 @@ public final class MapEngine {
 	}
 
 	/**
-	 * Underground means a real roof: at least three opaque blocks (not leaves or wood, so trees and
-	 * plank roofs do not count) somewhere above the head, in most of five columns around the player.
+	 * Underground means a real roof: at least two opaque blocks that are not leaves or wood (so trees
+	 * and plank roofs do not count) above the head, straight up and in at least two of the four
+	 * columns three blocks away. A tunnel dug just under the grass qualifies; a house does not.
 	 */
 	private static boolean isUnderground(World w, EntityPlayer player) {
 		int x = (int) Math.floor(player.posX);
@@ -192,13 +208,15 @@ public final class MapEngine {
 		int head = (int) Math.floor(player.boundingBox.minY) + 2;
 		if (head >= 255)
 			return false;
+		if (!columnCovered(w, x, head, z))
+			return false;
 		int covered = 0;
-		int[][] offsets = { { 0, 0 }, { 3, 0 }, { -3, 0 }, { 0, 3 }, { 0, -3 } };
+		int[][] offsets = { { 3, 0 }, { -3, 0 }, { 0, 3 }, { 0, -3 } };
 		for (int[] o : offsets) {
-			if (columnCovered(w, x + o[0], head, z + o[1]))
-				covered++;
+			if (columnCovered(w, x + o[0], head, z + o[1]) && ++covered >= 2)
+				return true;
 		}
-		return covered >= 3;
+		return false;
 	}
 
 	private static boolean columnCovered(World w, int x, int fromY, int z) {
@@ -213,7 +231,7 @@ public final class MapEngine {
 			Block b = Block.blocksList[id];
 			if (b == null || b.blockMaterial == Material.leaves || b.blockMaterial == Material.wood)
 				continue;
-			if (++solid >= 3)
+			if (++solid >= 2)
 				return true;
 		}
 		return false;
@@ -253,6 +271,14 @@ public final class MapEngine {
 			caveUpdater = new MapUpdater(w, caveStorage, true, false);
 			caveUpdater.setEnabled(false, player);
 			w.addWorldAccess(caveUpdater);
+			final CaveLayers layers = new CaveLayers(new File(new File(MAP_DIR, id), "caves"));
+			caveLayers = layers;
+			caveUpdater.setSampleListener(new MapUpdater.SampleListener() {
+				@Override
+				public void sampled(int chunkX, int chunkZ, int refY, int[] data) {
+					layers.record(chunkX, chunkZ, refY, data);
+				}
+			});
 		}
 	}
 
@@ -266,6 +292,10 @@ public final class MapEngine {
 		if (caveStorage != null) {
 			caveStorage.close();
 			caveStorage = null;
+		}
+		if (caveLayers != null) {
+			caveLayers.close();
+			caveLayers = null;
 		}
 		caveActive = false;
 		caveVotes = 0;
