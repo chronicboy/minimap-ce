@@ -173,8 +173,8 @@ public class GLTest {
         for (int sy = 6; sy < H - 6; sy += 11) for (int sx = 6; sx < W - 6; sx += 11) {
             double ox = sx + 0.5 - 256, oy = sy + 0.5 - 256;
             double fx = 100.5 + (cos * ox + sin * oy) / 2.0, fz = 60.5 + (-sin * ox + cos * oy) / 2.0;
-            // skip samples too close to a texel border (rasterisation may pick either side)
-            if (Math.abs(fx - Math.rint(fx)) < 0.2 || Math.abs(fz - Math.rint(fz)) < 0.2) continue;
+            // skip samples near a texel border: the sharp shader blends across the pixel that straddles it
+            if (Math.abs(fx - Math.rint(fx)) < 0.4 || Math.abs(fz - Math.rint(fz)) < 0.4) continue;
             if (px(sx, sy) != pattern((int) Math.floor(fx), (int) Math.floor(fz))) bad++;
         }
         check(bad == 0, "test 4b (arbitrary rotation, 2x): " + bad);
@@ -202,6 +202,54 @@ public class GLTest {
         }
         check(bad == 0, "test 6 (opacity blend): " + bad);
 
+        // ---------------- 6b. sharp sampling: in-between zoom (1.5 px per block) and rotation (30 deg at 3x)
+        check(SharpShader.available(), "sharp shader compiles on this GPU");
+        double sc = MapDraw.snap(10.3, 256, 1.5, 1), scz = MapDraw.snap(-20.7, 256, 1.5, 1);
+        check(Math.abs(sc - 10.3) <= 0.5 / 1.5 + 1e-9 && Math.abs(scz + 20.7) <= 0.5 / 1.5 + 1e-9, "snap moves less than half a pixel");
+        check(Math.abs((256 - sc * 1.5) - Math.rint(256 - sc * 1.5)) < 1e-9, "snap puts world 0 on a pixel edge");
+        drawUntilComplete(s, sc, scz, 1.5, 0.0, RX, RY, 4, 1.0f, 1);
+        glErr("test 6b");
+        check(GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) == 0, "shader program restored after drawing");
+        readFrame(); bad = 0; int exact = 0, blended = 0;
+        for (int sy = 0; sy < H; sy += 1) for (int sx = 0; sx < W; sx += 1) {
+            double fx = sc + (sx + 0.5 - 256) / 1.5, fz = scz + (sy + 0.5 - 256) / 1.5;
+            double ex = Math.abs(fx - Math.rint(fx)) * 1.5, ez = Math.abs(fz - Math.rint(fz)) * 1.5; // pixels to nearest edge
+            if (ex >= 0.499 && ez >= 0.499) { exact++; if (px(sx, sy) != pattern((int) Math.floor(fx), (int) Math.floor(fz))) bad++; }
+            else blended++;
+        }
+        check(bad == 0 && exact > 50000 && blended > 50000, "test 6b (1.5x: blocks solid, only edge pixels blended): " + bad + " wrong of " + exact);
+        // no block may come out as a different width than its neighbours: count runs along one row
+        int[] runs = new int[8]; int run = 0, last = -1;
+        for (int sx = 20; sx < 492; sx++) { int p = px(sx, 300); if (p == last) run++; else { if (run > 0 && run < 8) runs[run]++; run = 1; last = p; } }
+        check(runs[1] + runs[2] > 100, "1.5x row has the expected short runs");
+
+        double rot30 = Math.toRadians(30);
+        drawUntilComplete(s, 40.0, 70.0, 3.0, rot30, RX, RY, 4, 1.0f, 1);
+        glErr("test 6c");
+        readFrame(); bad = 0; exact = 0;
+        double c30 = Math.cos(rot30), s30 = Math.sin(rot30), d30 = (Math.abs(c30) + Math.abs(s30)) / 3.0;
+        for (int sy = 30; sy < H - 30; sy++) for (int sx = 30; sx < W - 30; sx++) {
+            double ox = sx + 0.5 - 256, oy = sy + 0.5 - 256;
+            double fx = 40.0 + (c30 * ox + s30 * oy) / 3.0, fz = 70.0 + (-s30 * ox + c30 * oy) / 3.0;
+            if (Math.abs(fx - Math.rint(fx)) < 0.6 * d30 || Math.abs(fz - Math.rint(fz)) < 0.6 * d30) continue;
+            exact++;
+            if (px(sx, sy) != pattern((int) Math.floor(fx), (int) Math.floor(fz))) bad++;
+        }
+        check(bad == 0 && exact > 20000, "test 6c (rotated 30 deg at 3x: solid blocks): " + bad + " wrong of " + exact);
+
+        // with sharp scaling off, the same view falls back to plain filtering and still restores state
+        MapDraw.sharpScaling = false;
+        drawUntilComplete(s, sc, scz, 1.5, 0.0, RX, RY, 4, 1.0f, 1);
+        glErr("test 6d");
+        readFrame(); bad = 0;
+        for (int sy = 7; sy < H; sy += 13) for (int sx = 7; sx < W; sx += 13) {
+            double fx = sc + (sx + 0.5 - 256) / 1.5, fz = scz + (sy + 0.5 - 256) / 1.5;
+            if (Math.abs(fx - Math.rint(fx)) < 0.05 || Math.abs(fz - Math.rint(fz)) < 0.05) continue; // pixel centre on an edge: either side is right
+            if (px(sx, sy) != pattern((int) Math.floor(fx), (int) Math.floor(fz))) bad++;
+        }
+        check(bad == 0, "test 6d (sharp off = nearest): " + bad);
+        MapDraw.sharpScaling = true;
+
         // ---------------- 7. live chunk update with relief shading, across a region border
         int[] hill = new int[256];
         for (int i = 0; i < 256; i++) hill[i] = MapShade.pack(0x808080, 64 + (i & 15) + (i >> 4)); // rises to the south-east
@@ -227,7 +275,7 @@ public class GLTest {
         // unchanged data must not dirty anything / must report success
         check(s.putChunk(0, 0, hill), "putChunk identical");
 
-        // ---------------- 8. zoomed out 2x (mipmapped minification): average of 2x2 blocks
+        // ---------------- 8. zoomed out 2x (mipmapped minification): every pixel is exactly one 2x2 block average
         drawUntilComplete(s, 200.0, -200.0, 0.5, 0.0, RX, RY, 4, 1.0f, 1);
         glErr("test 8");
         readFrame(); bad = 0;

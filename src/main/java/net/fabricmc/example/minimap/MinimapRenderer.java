@@ -42,11 +42,12 @@ public class MinimapRenderer {
 	private double viewX, viewZ, viewScale, viewCos, viewSin, viewRotation;
 	private double centerX, centerY;
 	private int radius;
+	/** Physical pixels per GUI pixel this frame. */
+	private int pixelScale = 1;
 	private boolean circle;
 
 	// Marker parts that need a texture, queued while the flat shapes are batched.
 	private static final int MAX_LETTERS = 96;
-	private static final double HEAD_HALF_SIZE = 4.0;
 	private final int[] letterX = new int[MAX_LETTERS];
 	private final int[] letterY = new int[MAX_LETTERS];
 	private final int[] letterColor = new int[MAX_LETTERS];
@@ -120,6 +121,13 @@ public class MinimapRenderer {
 		viewRotation = cfg.rotateMinimap ? Math.toRadians(180.0 - yaw) : 0.0;
 		viewCos = Math.cos(viewRotation);
 		viewSin = Math.sin(viewRotation);
+		pixelScale = Math.max(1, guiScale);
+		if (viewRotation == 0.0) {
+			// Land block edges exactly on screen pixels; markers use the same snapped view so nothing drifts.
+			viewX = MapDraw.snap(viewX, centerX, viewScale, pixelScale);
+			viewZ = MapDraw.snap(viewZ, centerY, viewScale, pixelScale);
+		}
+		MapDraw.sharpScaling = cfg.sharpScaling;
 		buildShape();
 
 		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT
@@ -163,7 +171,7 @@ public class MinimapRenderer {
 
 		// ---- Terrain
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
-		MapDraw.draw(MapEngine.INSTANCE.storage(), viewX, viewZ, viewScale, viewRotation, centerX, centerY, shapeX,
+		MapDraw.draw(MapEngine.INSTANCE.minimapStorage(), viewX, viewZ, viewScale, viewRotation, centerX, centerY, shapeX,
 				shapeY, shapeN, opacity, guiScale, true);
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -195,7 +203,7 @@ public class MinimapRenderer {
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 		GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 		for (int i = 0; i < headCount; i++) {
-			EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i], HEAD_HALF_SIZE);
+			EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i]);
 			headTexture[i] = null;
 			headIcon[i] = null;
 		}
@@ -469,17 +477,18 @@ public class MinimapRenderer {
 				EntityIcons.Head head = EntityIcons.forEntity(e);
 				ResourceLocation texture = head != null ? EntityIcons.textureOf(e) : null;
 				if (texture != null) {
-					// Snapped to whole pixels so the face texels stay crisp; thin rim in the category colour.
-					double hx = Math.rint(x), hy = Math.rint(y);
-					double hw = EntityIcons.halfWidth(head, HEAD_HALF_SIZE);
-					double hh = EntityIcons.halfHeight(head, HEAD_HALF_SIZE);
-					MapMarkers.rect(t, hx - hw - 1.0, hy - hh - 1.0, hx + hw + 1.0, hy + hh + 1.0, 0.03f, 0.03f, 0.03f,
-							1.0f);
-					MapMarkers.rect(t, hx - hw - 0.5, hy - hh - 0.5, hx + hw + 0.5, hy + hh + 0.5, r, g, b, 1.0f);
+					// Corner snapped to a physical pixel so every face texel is a crisp square,
+					// framed by a one-pixel dark outline.
+					double w = EntityIcons.iconWidth(head), h = EntityIcons.iconHeight(head);
+					double onePixel = 1.0 / pixelScale;
+					double left = Math.rint((x - w / 2.0) * pixelScale) / pixelScale;
+					double top = Math.rint((y - h / 2.0) * pixelScale) / pixelScale;
+					MapMarkers.rect(t, left - onePixel, top - onePixel, left + w + onePixel, top + h + onePixel, 0.02f,
+							0.02f, 0.02f, 1.0f);
 					headTexture[headCount] = texture;
 					headIcon[headCount] = head;
-					headX[headCount] = hx;
-					headY[headCount] = hy;
+					headX[headCount] = left;
+					headY[headCount] = top;
 					headCount++;
 					continue;
 				}

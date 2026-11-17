@@ -15,7 +15,7 @@ public class MapConfig {
 	/** zoomLevel n means 2^-n GUI pixels per block: -2 = 4x ... 2 = 1/4x. */
 	public static final int MIN_ZOOM = -2;
 	public static final int MAX_ZOOM = 2;
-	public static final double MIN_FULLSCREEN_SCALE = 1.0 / 32.0;
+	public static final double MIN_FULLSCREEN_SCALE = 1.0 / 64.0;
 	public static final double MAX_FULLSCREEN_SCALE = 16.0;
 
 	public static final int SHAPE_CIRCLE = 0;
@@ -33,6 +33,10 @@ public class MapConfig {
 	public int minimapPosition = 1; // 0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right
 	public int minimapShape = SHAPE_CIRCLE;
 	public boolean rotateMinimap = false;
+	/** Underground, show a live slice of the caves around the player instead of the surface. */
+	public boolean caveMode = true;
+	/** Crisp-with-smooth-edges sampling for in-between zoom levels and rotation (needs OpenGL 2.0). */
+	public boolean sharpScaling = true;
 	public float mapOpacity = 1.0f;
 	public boolean showEntities = true;
 	/** Radar style: mob faces, direction arrows (3.x look) or plain dots. */
@@ -119,6 +123,8 @@ public class MapConfig {
 			minimapShape = getBool(props, "circular", true) ? SHAPE_CIRCLE : SHAPE_SQUARE;
 		}
 		rotateMinimap = getBool(props, "rotateMinimap", rotateMinimap);
+		caveMode = getBool(props, "caveMode", caveMode);
+		sharpScaling = getBool(props, "sharpScaling", sharpScaling);
 		mapOpacity = clamp(getFloat(props, "mapOpacity", mapOpacity), 0.25f, 1.0f);
 		showEntities = getBool(props, "showEntities", showEntities);
 		entityIconStyle = clamp(getInt(props, "entityIconStyle", entityIconStyle), 0, 2);
@@ -178,6 +184,8 @@ public class MapConfig {
 		props.setProperty("minimapShape", String.valueOf(minimapShape));
 		props.setProperty("circular", String.valueOf(minimapShape == SHAPE_CIRCLE));
 		props.setProperty("rotateMinimap", String.valueOf(rotateMinimap));
+		props.setProperty("caveMode", String.valueOf(caveMode));
+		props.setProperty("sharpScaling", String.valueOf(sharpScaling));
 		props.setProperty("mapOpacity", String.valueOf(mapOpacity));
 		props.setProperty("showEntities", String.valueOf(showEntities));
 		props.setProperty("entityIconStyle", String.valueOf(entityIconStyle));

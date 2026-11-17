@@ -67,15 +67,21 @@ public final class MapStorage {
 	private int cacheRx, cacheRz;
 	private MapRegion cacheRegion;
 
+	/** A map that lives only in memory (nothing is read or written), e.g. the live cave view. */
+	public static MapStorage memoryOnly() {
+		return new MapStorage(null, null);
+	}
+
 	/**
-	 * @param dir       directory for this world's region files (created on first save)
+	 * @param dir       directory for this world's region files (created on first save), or null for memory only
 	 * @param legacyDir directory with Minimap CE 3.x region files to import from, or null.
 	 *                  Legacy files are only ever read, never modified.
 	 */
 	public MapStorage(File dir, File legacyDir) {
 		this.dir = dir;
 		this.legacyDir = legacyDir;
-		scan(dir, ".mmr", onDisk);
+		if (dir != null)
+			scan(dir, ".mmr", onDisk);
 		if (legacyDir != null)
 			scan(legacyDir, ".dat", legacyOnDisk);
 		legacyOnDisk.removeAll(onDisk);
@@ -609,8 +615,8 @@ public final class MapStorage {
 	 */
 	private void submitSave(MapRegion r, boolean transfer) {
 		r.dirty = false;
-		if (r.chunks == null)
-			return;
+		if (r.chunks == null || dir == null)
+			return; // memory-only map
 		final int[][] snapshot = transfer ? r.chunks : r.chunks.clone();
 		final File file = regionFile(r.rx, r.rz);
 		final Long k = r.key;

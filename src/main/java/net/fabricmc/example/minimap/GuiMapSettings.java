@@ -43,6 +43,8 @@ public class GuiMapSettings extends GuiScreen {
 	private static final int BTN_PAUSE_GAME = 16;
 	private static final int BTN_ENTITY_ICONS = 17;
 	private static final int BTN_WAYPOINT_ICONS = 18;
+	private static final int BTN_CAVE = 19;
+	private static final int BTN_SHARP = 20;
 	private static final int BTN_DONE = 99;
 	private static final int BTN_TAB_FIRST = 200;
 
@@ -165,6 +167,9 @@ public class GuiMapSettings extends GuiScreen {
 			});
 			help.put(BTN_OPACITY, "Lower values let the world show through the minimap.");
 			add(BTN_PADDING, right, y, w, h, "Extra space between the minimap and the screen edge.");
+			y += gap;
+			add(BTN_CAVE, left, y, w, h,
+					"When there is rock above you, the minimap shows the caves at your level instead of the surface.");
 		} else if (page == PAGE_MARKERS) {
 			add(BTN_ENTITIES, left, y, w, h, "Show nearby mobs and players on the minimap.");
 			add(BTN_ENTITY_ICONS, right, y, w, h,
@@ -186,6 +191,10 @@ public class GuiMapSettings extends GuiScreen {
 					"Whether opening the fullscreen map pauses a singleplayer game. Turn off to watch it while travelling.");
 			add(BTN_TELEPORT, right, y, w, h,
 					"Show teleport options in the waypoint list and the map's right-click menu (needs cheats or op).");
+			y += gap;
+			add(BTN_SHARP, left, y, w, h,
+					"Sharp keeps map blocks crisp at in-between zoom levels and when rotating, with clean edges. "
+							+ "Nearest is the plain fallback if your graphics driver has trouble with it.");
 		}
 
 		this.buttonList.add(new GuiButton(BTN_DONE, centerX - 100, this.height - 26, 200, 20, "Done"));
@@ -234,6 +243,10 @@ public class GuiMapSettings extends GuiScreen {
 				return toggle("Biome", cfg.showBiome);
 			case BTN_TELEPORT:
 				return toggle("Teleport Options", cfg.showTeleportButton);
+			case BTN_CAVE:
+				return "Cave Mode: " + (cfg.caveMode ? "\u00a7aAuto" : "\u00a7cOff");
+			case BTN_SHARP:
+				return "Map Pixels: " + (cfg.sharpScaling ? "Sharp" : "Nearest");
 			case BTN_PAUSE_GAME:
 				return toggle("Map Pauses Game", cfg.fullscreenMapPausesGame);
 			default:
@@ -304,6 +317,12 @@ public class GuiMapSettings extends GuiScreen {
 			case BTN_TELEPORT:
 				cfg.showTeleportButton = !cfg.showTeleportButton;
 				break;
+			case BTN_CAVE:
+				cfg.caveMode = !cfg.caveMode;
+				break;
+			case BTN_SHARP:
+				cfg.sharpScaling = !cfg.sharpScaling;
+				break;
 			case BTN_PAUSE_GAME:
 				cfg.fullscreenMapPausesGame = !cfg.fullscreenMapPausesGame;
 				break;
@@ -349,7 +368,7 @@ public class GuiMapSettings extends GuiScreen {
 		this.drawCenteredString(this.fontRenderer, "\u00a7lMap Settings", this.width / 2, roomy ? 10 : 5, 0xFFFFFF);
 
 		if (page == PAGE_WORLD_MAP) {
-			int y = (roomy ? 26 : 18) + (roomy ? 32 : 26) + 30;
+			int y = (roomy ? 26 : 18) + (roomy ? 32 : 26) + (roomy ? 24 : 22) + 30;
 			this.drawCenteredString(this.fontRenderer, "\u00a77Teleport command: \u00a7f" + MapConfig.instance.teleportCommand,
 					this.width / 2, y, 0xFFFFFF);
 			this.drawCenteredString(this.fontRenderer, "\u00a78Change it in config/minimap-ce.conf. {x} {y} {z} {dim} {name} are filled in.",

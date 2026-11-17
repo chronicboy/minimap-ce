@@ -1,7 +1,10 @@
 package net.fabricmc.example.minimap.engine;
 
+import net.fabricmc.example.minimap.MapConfig;
 import net.fabricmc.example.minimap.WaypointManager;
+import net.minecraft.src.Block;
 import net.minecraft.src.EntityPlayer;
+import net.minecraft.src.Material;
 import net.minecraft.src.Minecraft;
 import net.minecraft.src.World;
 import org.lwjgl.opengl.GL11;
@@ -28,10 +31,22 @@ public final class MapEngine {
 	private static final int FIRST_RESCAN_TICK = 40;
 	private static final int SECOND_RESCAN_TICK = 200;
 
+	/** Ticks between underground checks, and how many checks in a row must agree before switching. */
+	private static final int CAVE_CHECK_INTERVAL = 5;
+	private static final int CAVE_SWITCH_CHECKS = 3;
+	private static final long CAVE_FRAME_BUDGET_NANOS = 900000L;
+	private static final long SURFACE_FRAME_BUDGET_WHILE_CAVE_NANOS = 400000L;
+
 	private World world;
 	private String worldId = "";
 	private MapStorage storage;
 	private MapUpdater updater;
+
+	// Live cave view (Overworld and other dimensions with a sky): memory only, rebuilt as the player moves.
+	private MapStorage caveStorage;
+	private MapUpdater caveUpdater;
+	private boolean caveActive;
+	private int caveVotes;
 	private int framesSinceTick;
 	private int colorGeneration = 0;
 	private int tickCounter;
@@ -43,6 +58,15 @@ public final class MapEngine {
 	/** Map of the current world, or null when not in a world. */
 	public MapStorage storage() {
 		return storage;
+	}
+
+	/** What the minimap shows right now: the live cave slice when underground, otherwise the surface. */
+	public MapStorage minimapStorage() {
+		return caveActive && caveStorage != null ? caveStorage : storage;
+	}
+
+	public boolean isCaveViewActive() {
+		return caveActive && caveStorage != null;
 	}
 
 	public String worldId() {
@@ -71,6 +95,11 @@ public final class MapEngine {
 		try {
 			storage.tick();
 			updater.tick(player);
+			if (caveUpdater != null) {
+				updateCaveMode(w, player);
+				caveStorage.tick();
+				caveUpdater.tick(player);
+			}
 
 			// Chunks can arrive in the same network batch as the login, before the listener exists and
 			// before the player's real position is known. Two late scans catch whatever that missed;
@@ -90,8 +119,11 @@ public final class MapEngine {
 
 			// Normally sampling happens once per rendered frame; this keeps the map
 			// updating when the HUD is not being drawn (F1).
-			if (framesSinceTick == 0)
+			if (framesSinceTick == 0) {
+				if (caveActive && caveUpdater != null)
+					caveUpdater.process(player, TICK_BUDGET_NANOS);
 				updater.process(player, TICK_BUDGET_NANOS);
+			}
 			framesSinceTick = 0;
 
 			if ((++tickCounter & 255) == 0)
@@ -110,7 +142,81 @@ public final class MapEngine {
 			return;
 		framesSinceTick++;
 		storage.beginFrame();
-		updater.process(mc.thePlayer, FRAME_BUDGET_NANOS);
+		if (caveActive && caveUpdater != null) {
+			// The cave view is what is on screen: it goes first, the surface map keeps trickling in.
+			caveStorage.beginFrame();
+			caveUpdater.process(mc.thePlayer, CAVE_FRAME_BUDGET_NANOS);
+			updater.process(mc.thePlayer, SURFACE_FRAME_BUDGET_WHILE_CAVE_NANOS);
+		} else {
+			updater.process(mc.thePlayer, FRAME_BUDGET_NANOS);
+		}
+	}
+
+	private void updateCaveMode(World w, EntityPlayer player) {
+		if (!MapConfig.instance.caveMode) {
+			setCaveActive(false, player);
+			caveVotes = 0;
+			return;
+		}
+		if (ticksInWorld % CAVE_CHECK_INTERVAL != 0)
+			return;
+		boolean underground = isUnderground(w, player);
+		if (underground == caveActive) {
+			caveVotes = 0;
+		} else if (++caveVotes >= CAVE_SWITCH_CHECKS) {
+			caveVotes = 0;
+			setCaveActive(underground, player);
+		}
+	}
+
+	private void setCaveActive(boolean on, EntityPlayer player) {
+		if (on == caveActive)
+			return;
+		caveActive = on;
+		if (on) {
+			// Start from a clean slate: an old slice may be from another cave at another height.
+			caveStorage.close();
+			caveStorage = MapStorage.memoryOnly();
+			caveUpdater.setStorage(caveStorage);
+		}
+		caveUpdater.setEnabled(on, player);
+	}
+
+	/**
+	 * Underground means a real roof: at least three opaque blocks (not leaves or wood, so trees and
+	 * plank roofs do not count) somewhere above the head, in most of five columns around the player.
+	 */
+	private static boolean isUnderground(World w, EntityPlayer player) {
+		int x = (int) Math.floor(player.posX);
+		int z = (int) Math.floor(player.posZ);
+		int head = (int) Math.floor(player.boundingBox.minY) + 2;
+		if (head >= 255)
+			return false;
+		int covered = 0;
+		int[][] offsets = { { 0, 0 }, { 3, 0 }, { -3, 0 }, { 0, 3 }, { 0, -3 } };
+		for (int[] o : offsets) {
+			if (columnCovered(w, x + o[0], head, z + o[1]))
+				covered++;
+		}
+		return covered >= 3;
+	}
+
+	private static boolean columnCovered(World w, int x, int fromY, int z) {
+		int top = Math.min(255, w.getHeightValue(x, z) + 1);
+		if (top <= fromY)
+			return false; // open sky straight above
+		int solid = 0;
+		for (int y = fromY; y <= top; y++) {
+			int id = w.getBlockId(x, y, z);
+			if (id <= 0 || id >= 4096 || !Block.opaqueCubeLookup[id])
+				continue;
+			Block b = Block.blocksList[id];
+			if (b == null || b.blockMaterial == Material.leaves || b.blockMaterial == Material.wood)
+				continue;
+			if (++solid >= 3)
+				return true;
+		}
+		return false;
 	}
 
 	private void enterWorld(World w, EntityPlayer player) {
@@ -120,8 +226,11 @@ public final class MapEngine {
 
 		if (updater != null) {
 			updater.deactivate();
+			if (updater.world() != null)
+				updater.world().removeWorldAccess(updater);
 			updater = null;
 		}
+		closeCaveView();
 		if (storage == null || !id.equals(worldId)) {
 			if (storage != null)
 				storage.close();
@@ -138,6 +247,28 @@ public final class MapEngine {
 		w.addWorldAccess(updater);
 		// Chunks that arrived before the listener was attached.
 		updater.markAround(chunkCoord(player.posX), chunkCoord(player.posZ), INITIAL_SCAN_RADIUS);
+
+		if (!caveMode && !w.provider.hasNoSky) {
+			caveStorage = MapStorage.memoryOnly();
+			caveUpdater = new MapUpdater(w, caveStorage, true, false);
+			caveUpdater.setEnabled(false, player);
+			w.addWorldAccess(caveUpdater);
+		}
+	}
+
+	private void closeCaveView() {
+		if (caveUpdater != null) {
+			caveUpdater.deactivate();
+			if (caveUpdater.world() != null)
+				caveUpdater.world().removeWorldAccess(caveUpdater);
+			caveUpdater = null;
+		}
+		if (caveStorage != null) {
+			caveStorage.close();
+			caveStorage = null;
+		}
+		caveActive = false;
+		caveVotes = 0;
 	}
 
 	private void leaveWorld() {
@@ -145,6 +276,7 @@ public final class MapEngine {
 			updater.deactivate();
 			updater = null;
 		}
+		closeCaveView();
 		if (storage != null) {
 			storage.close();
 			storage = null;

@@ -5,15 +5,17 @@
 A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explored terrain lives in textures on the graphics card, and chunks are only looked at when they actually load or change.
 
 ### Features
-* **Smooth at any frame rate** - the minimap scrolls and turns with sub-pixel precision, and markers move with the terrain instead of jittering against it.
+* **Smooth at any frame rate** - the minimap scrolls and turns smoothly, and markers move with the terrain instead of jittering against it.
+* **Crisp at every zoom** - map blocks line up exactly with screen pixels. Whole-number zooms are pixel-perfect; in-between zooms and the rotating minimap use a small shader that keeps every block solid and only softens the one pixel on a block edge (falls back to plain sampling without OpenGL 2.0, or switch it off under World Map > Map Pixels). Zoomed out, each pixel is the clean average of the blocks it covers instead of a blur.
+* **Cave mode** - when there is rock above you, the minimap switches to a live slice of the caves at your level (walls dark, floors in their own colours) and back to the surface when you come out, like Xaero's. Trees and plank roofs do not trigger it. Can be turned off.
 * **Rotating minimap** - optional "follows player" mode where up is always the way you are facing (compass letters orbit the frame).
 * **Square minimap** - the shape setting now actually works.
 * **Five minimap zoom levels** - 4x, 2x, 1x, 1/2x and 1/4x (was three).
 * **Minimap opacity** - 100% down to 25%.
-* **Mob heads on the radar** - nearby mobs and players show their own face, cut from their skin (follows resource packs and BTW's varied animal skins), with a rim in the usual hostile/passive/player color. The 3.x arrows and plain dots are available as alternative styles.
+* **Mob heads on the radar** - nearby mobs and players show their own face, cut from their skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline. The 3.x color-coded arrows and plain dots are available as alternative styles.
 * **Lettered waypoint tiles** - waypoints are colored tiles with their initial on both maps. The small 3.x squares are still available.
 * **New settings screen** - three tabs, sliders for size, zoom and opacity, the minimap drawn live behind it so changes show immediately, and an explanation of whatever option you hover.
-* **Fullscreen map rebuilt** - drag to pan and scroll to zoom towards the cursor with no stutter, hold WASD/arrow keys to glide, `C` to follow the player again. Zooms from 16 pixels per block out to an overview of everything you have ever explored.
+* **Fullscreen map rebuilt** - drag to pan and scroll to zoom towards the cursor with no stutter, hold WASD/arrow keys to glide, `C` to follow the player again. Zoom steps are chosen so the map is always pixel-sharp, from 64 screen pixels per block out to an overview of everything you have ever explored.
 * **Right-click menu on the fullscreen map** - new waypoint here, teleport here, centre on player; on a waypoint: edit, hide/show, teleport, delete.
 * **Truer colours** - every block state has its own colour (wool, planks, stained clay and friends no longer all look like the first variant), spruce and birch leaves use their own tints, swamp water is swamp coloured.
 * **Water depth** - shallows hint at the bed through the water, deep water is darker.

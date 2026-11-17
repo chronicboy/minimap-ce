@@ -14,7 +14,9 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Zoom** — five levels from 4x to 1/4x.
 - **Adjustable size, corner and opacity.**
 - **Chunk grid overlay** (toggleable).
+- **Crisp at every zoom** — blocks line up with screen pixels; in-between zooms and the rotating map keep blocks solid with clean edges.
 - **Smooth and light** — terrain is drawn from GPU textures, so the map scrolls smoothly at any frame rate and costs next to nothing. Chunks are only read when they load or change.
+- **Cave mode** — underground, the minimap shows the caves at your level instead of the surface, and switches back when you come out.
 - **Nether support** — shows the floor of the level you are on and remembers what you have seen as you move between levels.
 
 ### Full-Screen Map
@@ -39,8 +41,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 
 ### Entity Radar
 - **Mob heads** — nearby mobs and players show their own face, cut from their skin, so it follows resource packs and BTW's varied animal skins.
-- **Arrows or dots** if you prefer — arrows point where the mob is looking.
-- **Color coded** — red for hostile, green for passive animals and villagers, blue for players, yellow for anything else.
+- **Arrows or dots** if you prefer — color coded (red hostile, green passive animals and villagers, blue players, yellow anything else), and arrows point where the mob is looking.
 - Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
 
 ### Info HUD
@@ -79,9 +80,9 @@ On the full-screen map:
 ## Settings
 Press `O` in game. The minimap stays visible behind the screen and updates as you change things; hover an option for an explanation.
 
-- **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding.
+- **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding, cave mode.
 - **Markers & Info** — entity radar and its icon style, waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
-- **World Map** — whether the full-screen map pauses the game, and whether teleport options are shown.
+- **World Map** — whether the full-screen map pauses the game, whether teleport options are shown, and map pixel scaling (Sharp, or Nearest if your graphics driver has trouble with Sharp).
 
 ## Configuration
 Everything lives in your game folder under `config/`:

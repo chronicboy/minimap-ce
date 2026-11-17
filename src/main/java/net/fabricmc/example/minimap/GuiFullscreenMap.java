@@ -44,6 +44,11 @@ public class GuiFullscreenMap extends GuiScreen {
 
 	// View
 	private double centerX, centerZ;
+	/** The centre actually drawn this frame: centerX/Z snapped to the physical pixel grid. */
+	private double shownX, shownZ;
+	/** Zoom levels in physical pixels per block: whole numbers above 1, powers of two below, all crisp. */
+	private static final double[] ZOOM_LEVELS = { 1.0 / 64, 1.0 / 32, 1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0 / 2, 1, 2, 3, 4,
+			6, 8, 12, 16, 24, 32, 48, 64 };
 	private double scale, targetScale;
 	private boolean initialized;
 	private boolean follow = true;
@@ -89,9 +94,9 @@ public class GuiFullscreenMap extends GuiScreen {
 		guiScale = Math.max(1, new ScaledResolution(mc.gameSettings, mc.displayWidth, mc.displayHeight).getScaleFactor());
 
 		if (!initialized && mc.thePlayer != null) {
-			centerX = mc.thePlayer.posX;
-			centerZ = mc.thePlayer.posZ;
-			scale = targetScale = MapConfig.instance.fullscreenScale;
+			centerX = shownX = mc.thePlayer.posX;
+			centerZ = shownZ = mc.thePlayer.posZ;
+			scale = targetScale = clampScale(ZOOM_LEVELS[nearestZoomLevel(MapConfig.instance.fullscreenScale)] / guiScale);
 			initialized = true;
 		}
 		if (mc.theWorld != null) {
@@ -222,19 +227,34 @@ public class GuiFullscreenMap extends GuiScreen {
 	}
 
 	private double toWorldX(double screenX) {
-		return centerX + (screenX - midX()) / scale;
+		return shownX + (screenX - midX()) / scale;
 	}
 
 	private double toWorldZ(double screenY) {
-		return centerZ + (screenY - midY()) / scale;
+		return shownZ + (screenY - midY()) / scale;
 	}
 
 	private double toScreenX(double worldX) {
-		return midX() + (worldX - centerX) * scale;
+		return midX() + (worldX - shownX) * scale;
 	}
 
 	private double toScreenY(double worldZ) {
-		return midY() + (worldZ - centerZ) * scale;
+		return midY() + (worldZ - shownZ) * scale;
+	}
+
+	private static double clampScale(double guiPixelsPerBlock) {
+		return Math.max(MapConfig.MIN_FULLSCREEN_SCALE, Math.min(MapConfig.MAX_FULLSCREEN_SCALE, guiPixelsPerBlock));
+	}
+
+	/** Index of the zoom level closest to a scale given in GUI pixels per block. */
+	private int nearestZoomLevel(double guiPixelsPerBlock) {
+		double real = Math.log(Math.max(1.0e-6, guiPixelsPerBlock * guiScale));
+		int best = 0;
+		for (int i = 1; i < ZOOM_LEVELS.length; i++) {
+			if (Math.abs(Math.log(ZOOM_LEVELS[i]) - real) < Math.abs(Math.log(ZOOM_LEVELS[best]) - real))
+				best = i;
+		}
+		return best;
 	}
 
 	/** Advances pan/zoom animation by the real time since the last frame. */
@@ -303,6 +323,8 @@ public class GuiFullscreenMap extends GuiScreen {
 			centerX = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
 			centerZ = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
 		}
+		shownX = MapDraw.snap(centerX, midX(), scale, guiScale);
+		shownZ = MapDraw.snap(centerZ, midY(), scale, guiScale);
 	}
 
 	// -------------------------------------------------------------------- draw
@@ -384,7 +406,8 @@ public class GuiFullscreenMap extends GuiScreen {
 			rectX[3] = -halfW;
 			rectY[3] = halfH;
 			GL11.glEnable(GL11.GL_TEXTURE_2D);
-			complete = MapDraw.draw(storage, centerX, centerZ, scale, 0.0, midX, midY, rectX, rectY, 4, 1.0f,
+			MapDraw.sharpScaling = MapConfig.instance.sharpScaling;
+			complete = MapDraw.draw(storage, shownX, shownZ, scale, 0.0, midX, midY, rectX, rectY, 4, 1.0f,
 					guiScale, true);
 			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 			GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -783,10 +806,8 @@ public class GuiFullscreenMap extends GuiScreen {
 	// ------------------------------------------------------------------- input
 
 	private void zoom(int steps, double mouseX, double mouseY) {
-		// Half-octave steps that always land exactly on 1x, 2x, 4x...
-		double level = Math.rint(Math.log(targetScale) / Math.log(2.0) * 2.0) + steps;
-		double next = Math.pow(2.0, level / 2.0);
-		next = Math.max(MapConfig.MIN_FULLSCREEN_SCALE, Math.min(MapConfig.MAX_FULLSCREEN_SCALE, next));
+		int index = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, nearestZoomLevel(targetScale) + steps));
+		double next = clampScale(ZOOM_LEVELS[index] / guiScale);
 		if (next == targetScale)
 			return;
 		targetScale = next;

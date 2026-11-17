@@ -20,12 +20,15 @@ public final class MapUpdater implements IWorldAccess {
 	private static final int BLOCK_CHANGE_DELAY_TICKS = 3;
 	private static final int CHUNK_LOAD_DELAY_TICKS = 1;
 	private static final int RETRY_DELAY_TICKS = 2;
-	private static final int CAVE_REFRESH_RADIUS = 5;
+	/** Chunks around the player kept current in cave mode (as the player moves up, down or sideways). */
+	public static final int CAVE_RADIUS = 8;
 	private static final int CAVE_REFRESH_STEP = 4;
 
 	private final World world;
-	private final MapStorage storage;
+	private MapStorage storage;
 	private final boolean caveMode;
+	/** Cave mode only: keep floors seen at other heights (Nether) instead of a fresh slice each time. */
+	private final boolean accumulate;
 
 	/** Chunk key -> tick at which the chunk may be sampled. */
 	private final HashMap<Long, Integer> dirty = new HashMap<Long, Integer>();
@@ -35,12 +38,50 @@ public final class MapUpdater implements IWorldAccess {
 
 	private int tick;
 	private int caveRefY = Integer.MIN_VALUE;
+	private int lastChunkX = Integer.MIN_VALUE, lastChunkZ = Integer.MIN_VALUE;
 	private boolean active = true;
+	private boolean enabled = true;
 
 	public MapUpdater(World world, MapStorage storage, boolean caveMode) {
+		this(world, storage, caveMode, caveMode);
+	}
+
+	public MapUpdater(World world, MapStorage storage, boolean caveMode, boolean accumulate) {
 		this.world = world;
 		this.storage = storage;
 		this.caveMode = caveMode;
+		this.accumulate = accumulate;
+	}
+
+	/**
+	 * Pauses or resumes the updater without unregistering it. While paused it
+	 * ignores world events; resuming queues everything around the player.
+	 */
+	public void setEnabled(boolean on, EntityPlayer player) {
+		if (on == enabled)
+			return;
+		enabled = on;
+		dirty.clear();
+		if (on && player != null) {
+			caveRefY = (int) Math.floor(player.posY);
+			lastChunkX = chunk(player.posX);
+			lastChunkZ = chunk(player.posZ);
+			markAround(lastChunkX, lastChunkZ, CAVE_RADIUS);
+		}
+	}
+
+	/** Points the updater at a different map (used to restart the live cave view from scratch). */
+	public void setStorage(MapStorage storage) {
+		this.storage = storage;
+		dirty.clear();
+	}
+
+	public boolean isEnabled() {
+		return enabled;
+	}
+
+	private static int chunk(double pos) {
+		return ((int) Math.floor(pos)) >> 4;
 	}
 
 	public World world() {
@@ -61,6 +102,8 @@ public final class MapUpdater implements IWorldAccess {
 	}
 
 	private void mark(int cx, int cz, int delay) {
+		if (!enabled)
+			return;
 		Long key = chunkKey(cx, cz);
 		if (!dirty.containsKey(key))
 			dirty.put(key, tick + delay);
@@ -79,15 +122,31 @@ public final class MapUpdater implements IWorldAccess {
 	/** Called once per client tick. */
 	public void tick(EntityPlayer player) {
 		tick++;
-		if (caveMode && player != null && active) {
-			int y = (int) Math.floor(player.posY);
-			if (caveRefY == Integer.MIN_VALUE) {
-				caveRefY = y;
-			} else if (Math.abs(y - caveRefY) >= CAVE_REFRESH_STEP) {
-				caveRefY = y;
-				markAround(((int) Math.floor(player.posX)) >> 4, ((int) Math.floor(player.posZ)) >> 4,
-						CAVE_REFRESH_RADIUS);
+		if (!caveMode || player == null || !active || !enabled)
+			return;
+		int cx = chunk(player.posX), cz = chunk(player.posZ);
+		int y = (int) Math.floor(player.posY);
+		if (caveRefY == Integer.MIN_VALUE) {
+			caveRefY = y;
+		} else if (Math.abs(y - caveRefY) >= CAVE_REFRESH_STEP) {
+			// A slice is only valid near the height it was taken at.
+			caveRefY = y;
+			markAround(cx, cz, CAVE_RADIUS);
+		}
+		if (lastChunkX == Integer.MIN_VALUE) {
+			lastChunkX = cx;
+			lastChunkZ = cz;
+		} else if (cx != lastChunkX || cz != lastChunkZ) {
+			// Chunks that just came within range were loaded long ago and will not report themselves.
+			for (int dz = -CAVE_RADIUS; dz <= CAVE_RADIUS; dz++) {
+				for (int dx = -CAVE_RADIUS; dx <= CAVE_RADIUS; dx++) {
+					int x = cx + dx, z = cz + dz;
+					if (Math.abs(x - lastChunkX) > CAVE_RADIUS || Math.abs(z - lastChunkZ) > CAVE_RADIUS)
+						mark(x, z, 0);
+				}
 			}
+			lastChunkX = cx;
+			lastChunkZ = cz;
 		}
 	}
 
@@ -97,7 +156,7 @@ public final class MapUpdater implements IWorldAccess {
 	 * @return number of chunks sampled
 	 */
 	public int process(EntityPlayer player, long budgetNanos) {
-		if (!active || dirty.isEmpty() || player == null)
+		if (!active || !enabled || dirty.isEmpty() || player == null)
 			return 0;
 		if (!BlockColors.ensureReady())
 			return 0;
@@ -156,7 +215,7 @@ public final class MapUpdater implements IWorldAccess {
 			dirty.remove(key);
 
 			int found = caveMode
-					? ChunkSampler.sampleCave(chunk, world, scratch, region.chunk(cx, cz), refY)
+					? ChunkSampler.sampleCave(chunk, world, scratch, accumulate ? region.chunk(cx, cz) : null, refY)
 					: ChunkSampler.sampleSurface(chunk, world, scratch);
 			if (found > 0)
 				storage.putChunk(cx, cz, scratch);

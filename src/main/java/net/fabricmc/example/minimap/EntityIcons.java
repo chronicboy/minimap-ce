@@ -144,13 +144,13 @@ final class EntityIcons {
 	}
 
 	/**
-	 * Draws an entity's face centred on (x, y), fitted into a square of the given
-	 * half size. Expects texturing and blending enabled and the colour set to white.
+	 * Draws an entity's face with its top-left corner at (left, top), at
+	 * {@link #iconWidth} x {@link #iconHeight}. Expects texturing and blending
+	 * enabled and the colour set to white.
 	 *
 	 * @param texture the skin from {@link #textureOf}
 	 */
-	static void drawHead(Minecraft mc, Tessellator t, ResourceLocation texture, Head head, double x, double y,
-			double half) {
+	static void drawHead(Minecraft mc, Tessellator t, ResourceLocation texture, Head head, double left, double top) {
 		mc.renderEngine.bindTexture(texture);
 
 		Float aspect = aspects.get(texture);
@@ -162,30 +162,41 @@ final class EntityIcons {
 		}
 		// The table is in texels of a texture "unitsWide" across; its height follows the real image's shape.
 		double unitsHigh = head.unitsWide * aspect;
-		double hw = halfWidth(head, half), hh = halfHeight(head, half);
+		double right = left + iconWidth(head), bottom = top + iconHeight(head);
 
 		t.startDrawingQuads();
-		addFace(t, x, y, hw, hh, head.x, head.y, head.w, head.h, head.unitsWide, unitsHigh);
+		addFace(t, left, top, right, bottom, head.x, head.y, head.w, head.h, head.unitsWide, unitsHigh);
 		if (head.overlayX >= 0)
-			addFace(t, x, y, hw, hh, head.overlayX, head.overlayY, head.w, head.h, head.unitsWide, unitsHigh);
+			addFace(t, left, top, right, bottom, head.overlayX, head.overlayY, head.w, head.h, head.unitsWide,
+					unitsHigh);
 		t.draw();
 	}
 
-	static double halfWidth(Head head, double half) {
-		return head.w >= head.h ? half : half * head.w / head.h;
+	/**
+	 * GUI pixels per face texel. Every face uses the same density (one texel per GUI
+	 * pixel, so it lands exactly on screen pixels at any GUI scale); only unusually
+	 * big faces (the ghast) are shrunk.
+	 */
+	private static double unit(Head head) {
+		int largest = Math.max(head.w, head.h);
+		return largest <= 10 ? 1.0 : 8.0 / largest;
 	}
 
-	static double halfHeight(Head head, double half) {
-		return head.h >= head.w ? half : half * head.h / head.w;
+	static double iconWidth(Head head) {
+		return head.w * unit(head);
 	}
 
-	private static void addFace(Tessellator t, double x, double y, double hw, double hh, int tx, int ty, int tw, int th,
-			double unitsWide, double unitsHigh) {
+	static double iconHeight(Head head) {
+		return head.h * unit(head);
+	}
+
+	private static void addFace(Tessellator t, double x0, double y0, double x1, double y1, int tx, int ty, int tw,
+			int th, double unitsWide, double unitsHigh) {
 		double u0 = tx / unitsWide, u1 = (tx + tw) / unitsWide;
 		double v0 = ty / unitsHigh, v1 = (ty + th) / unitsHigh;
-		t.addVertexWithUV(x - hw, y + hh, 0.0, u0, v1);
-		t.addVertexWithUV(x + hw, y + hh, 0.0, u1, v1);
-		t.addVertexWithUV(x + hw, y - hh, 0.0, u1, v0);
-		t.addVertexWithUV(x - hw, y - hh, 0.0, u0, v0);
+		t.addVertexWithUV(x0, y1, 0.0, u0, v1);
+		t.addVertexWithUV(x1, y1, 0.0, u1, v1);
+		t.addVertexWithUV(x1, y0, 0.0, u1, v0);
+		t.addVertexWithUV(x0, y0, 0.0, u0, v0);
 	}
 }

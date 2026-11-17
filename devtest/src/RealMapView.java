@@ -31,6 +31,8 @@ public class RealMapView {
         double cx = a.length > 3 ? Double.parseDouble(a[2]) : (minRx + maxRx + 1) * 256.0;
         double cz = a.length > 3 ? Double.parseDouble(a[3]) : (minRz + maxRz + 1) * 256.0;
         double scale = a.length > 4 ? Double.parseDouble(a[4]) : 1.0;
+        if (a.length > 5) MapDraw.pointSampleZoomedOut = Boolean.parseBoolean(a[5]);
+        String name = a.length > 6 ? a[6] : "realmap";
         int W = 1024, H = 1024;
 
         Pbuffer pb = new Pbuffer(W, H, new PixelFormat(8, 24, 0), null);
@@ -44,7 +46,8 @@ public class RealMapView {
             GL11.glMatrixMode(GL11.GL_MODELVIEW); GL11.glLoadIdentity(); GL11.glTranslatef(0, 0, -2000);
             GL11.glClearColor(0.07f, 0.07f, 0.09f, 1f); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
             GL11.glDisable(GL11.GL_DEPTH_TEST); GL11.glDisable(GL11.GL_CULL_FACE); GL11.glEnable(GL11.GL_BLEND); GL11.glEnable(GL11.GL_TEXTURE_2D);
-            boolean done = MapDraw.draw(s, cx, cz, scale, 0, W / 2.0, H / 2.0, rx, ry, 4, 1f, 1, true);
+            double sx = MapDraw.snap(cx, W / 2.0, scale, 1), sz = MapDraw.snap(cz, H / 2.0, scale, 1);
+            boolean done = MapDraw.draw(s, sx, sz, scale, 0, W / 2.0, H / 2.0, rx, ry, 4, 1f, 1, true);
             s.tick(); MapIO.flush(2000); s.tick();
             if (done && i > 2) break;
         }
@@ -54,7 +57,7 @@ public class RealMapView {
         BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
         int[] row = new int[W];
         for (int y = 0; y < H; y++) { buf.position((H - 1 - y) * W); buf.get(row); img.setRGB(0, y, W, 1, row, 0, W); }
-        File png = new File(out, "realmap.png");
+        File png = new File(out, name + ".png");
         ImageIO.write(img, "png", png);
         System.out.println("regions x " + minRx + ".." + maxRx + " z " + minRz + ".." + maxRz + " centre " + cx + "," + cz + " -> " + png);
         s.close();
