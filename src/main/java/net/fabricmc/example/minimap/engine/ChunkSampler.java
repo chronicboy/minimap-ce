@@ -196,9 +196,9 @@ public final class ChunkSampler {
 		int rgb = waterRgb;
 		if (floorId != 0) {
 			int floorRgb = stateColor((floorId << 4) | (chunk.getBlockMetadata(x, y, z) & 15), biome);
-			int opacity = 115 + depth * 18;
-			if (opacity > 236)
-				opacity = 236;
+			int opacity = 150 + depth * 14;
+			if (opacity > 240)
+				opacity = 240;
 			rgb = MapShade.lerp(floorRgb, waterRgb, opacity);
 		}
 		int darken = 256 - Math.min(depth, 20) * 4;

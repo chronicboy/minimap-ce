@@ -21,6 +21,13 @@ public class MapConfig {
 	public static final int SHAPE_CIRCLE = 0;
 	public static final int SHAPE_SQUARE = 1;
 
+	public static final int ENTITY_HEADS = 0;
+	public static final int ENTITY_ARROWS = 1;
+	public static final int ENTITY_DOTS = 2;
+
+	public static final int WAYPOINT_LETTERS = 0;
+	public static final int WAYPOINT_SQUARES = 1;
+
 	public boolean minimapEnabled = true;
 	public int minimapSize = 128;
 	public int minimapPosition = 1; // 0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right
@@ -28,6 +35,10 @@ public class MapConfig {
 	public boolean rotateMinimap = false;
 	public float mapOpacity = 1.0f;
 	public boolean showEntities = true;
+	/** Radar style: mob faces, direction arrows (3.x look) or plain dots. */
+	public int entityIconStyle = ENTITY_HEADS;
+	/** Waypoint style: coloured tile with the name's initial, or the small 3.x square. */
+	public int waypointIconStyle = WAYPOINT_LETTERS;
 	public int zoomLevel = 0;
 	public boolean showChunkGrid = false;
 	public boolean showCompass = true;
@@ -110,6 +121,8 @@ public class MapConfig {
 		rotateMinimap = getBool(props, "rotateMinimap", rotateMinimap);
 		mapOpacity = clamp(getFloat(props, "mapOpacity", mapOpacity), 0.25f, 1.0f);
 		showEntities = getBool(props, "showEntities", showEntities);
+		entityIconStyle = clamp(getInt(props, "entityIconStyle", entityIconStyle), 0, 2);
+		waypointIconStyle = clamp(getInt(props, "waypointIconStyle", waypointIconStyle), 0, 1);
 		zoomLevel = clamp(getInt(props, "zoomLevel", zoomLevel), MIN_ZOOM, MAX_ZOOM);
 		showChunkGrid = getBool(props, "showChunkGrid", showChunkGrid);
 		showCompass = getBool(props, "showCompass", showCompass);
@@ -167,6 +180,8 @@ public class MapConfig {
 		props.setProperty("rotateMinimap", String.valueOf(rotateMinimap));
 		props.setProperty("mapOpacity", String.valueOf(mapOpacity));
 		props.setProperty("showEntities", String.valueOf(showEntities));
+		props.setProperty("entityIconStyle", String.valueOf(entityIconStyle));
+		props.setProperty("waypointIconStyle", String.valueOf(waypointIconStyle));
 		props.setProperty("zoomLevel", String.valueOf(zoomLevel));
 		props.setProperty("showChunkGrid", String.valueOf(showChunkGrid));
 		props.setProperty("showCompass", String.valueOf(showCompass));

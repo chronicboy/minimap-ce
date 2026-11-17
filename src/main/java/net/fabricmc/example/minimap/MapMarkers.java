@@ -110,6 +110,81 @@ final class MapMarkers {
 		arrow(t, x, y, angle, size * 0.6, 0.82, 0.633, 0.133, 1.0f, 0.85f, 0.2f, 0.0f, 0);
 	}
 
+	/** Round blip with a dark rim. */
+	static void dot(Tessellator t, double x, double y, double radius, float r, float g, float b) {
+		disc(t, x, y, radius + 0.8, 0.03f, 0.03f, 0.03f);
+		disc(t, x, y, radius, r, g, b);
+	}
+
+	private static final int DISC_SEGMENTS = 12;
+	private static final double[] DISC_COS = new double[DISC_SEGMENTS + 1];
+	private static final double[] DISC_SIN = new double[DISC_SEGMENTS + 1];
+	static {
+		for (int i = 0; i <= DISC_SEGMENTS; i++) {
+			double a = i * 2.0 * Math.PI / DISC_SEGMENTS;
+			DISC_COS[i] = Math.cos(a);
+			DISC_SIN[i] = Math.sin(a);
+		}
+	}
+
+	private static void disc(Tessellator t, double x, double y, double radius, float r, float g, float b) {
+		t.setColorRGBA_F(r, g, b, 1.0f);
+		for (int i = 0; i < DISC_SEGMENTS; i++) {
+			t.addVertex(x, y, 0.0);
+			t.addVertex(x + DISC_COS[i + 1] * radius, y + DISC_SIN[i + 1] * radius, 0.0);
+			t.addVertex(x + DISC_COS[i] * radius, y + DISC_SIN[i] * radius, 0.0);
+		}
+	}
+
+	/** Size of the lettered waypoint tile (GUI pixels, outline included). */
+	static final int TILE_SIZE = 11;
+
+	/**
+	 * Lettered waypoint tile: a 9x9 coloured square with a dark outline. The
+	 * letter itself is text and is drawn afterwards with {@link #tileLetterX}.
+	 *
+	 * @param x,y centre of the tile (snapped to whole pixels)
+	 */
+	static void waypointTile(Tessellator t, int x, int y, int rgb) {
+		float r = ((rgb >> 16) & 0xFF) / 255.0f;
+		float g = ((rgb >> 8) & 0xFF) / 255.0f;
+		float b = (rgb & 0xFF) / 255.0f;
+		rect(t, x - 5, y - 5, x + 6, y + 6, 0.03f, 0.03f, 0.03f, 1.0f);
+		rect(t, x - 4, y - 4, x + 5, y + 5, r, g, b, 1.0f);
+		// Soft top-left highlight and bottom-right shade so the tile reads as a raised key.
+		rect(t, x - 4, y - 4, x + 5, y - 3, 1.0f, 1.0f, 1.0f, 0.22f);
+		rect(t, x - 4, y + 4, x + 5, y + 5, 0.0f, 0.0f, 0.0f, 0.22f);
+	}
+
+	/** The character shown on a waypoint tile. */
+	static String tileLetter(String name) {
+		if (name != null) {
+			for (int i = 0; i < name.length(); i++) {
+				char c = name.charAt(i);
+				if (c == '\u00a7') {
+					i++; // skip a formatting code
+					continue;
+				}
+				if (!Character.isWhitespace(c))
+					return String.valueOf(Character.toUpperCase(c));
+			}
+		}
+		return "?";
+	}
+
+	/** Black on light tiles, white on dark ones. */
+	static int tileLetterColor(int rgb) {
+		int luminance = (((rgb >> 16) & 0xFF) * 299 + ((rgb >> 8) & 0xFF) * 587 + (rgb & 0xFF) * 114) / 1000;
+		return luminance > 150 ? 0x101010 : 0xFFFFFF;
+	}
+
+	/** Left edge for drawing a letter of the given font width centred on a tile at x. */
+	static int tileLetterX(int x, int charWidth) {
+		// The font's width includes one pixel of spacing after the glyph.
+		int glyph = Math.max(1, charWidth - 1);
+		return x - 4 + (9 - glyph) / 2;
+	}
+
 	/** Waypoint marker: outlined coloured square with a white centre dot. */
 	static void waypoint(Tessellator t, double x, double y, int half, int rgb) {
 		float r = ((rgb >> 16) & 0xFF) / 255.0f;

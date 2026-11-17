@@ -3,7 +3,7 @@
   "id": "minimap-ce",
   "version": "${version}",
   "name": "Minimap CE",
-  "description": "JourneyMap-inspired minimap with texture-sampled colors, waypoint management, entity tracking, and in-world beacons for Better Than Wolves CE 3.0.0",
+  "description": "Minimap and full-screen world map with texture-sampled colors, waypoints, a mob-head entity radar and in-world beacons for Better Than Wolves CE 3.0.0 and above",
   "authors": [
     "chronicboy31"
   ],

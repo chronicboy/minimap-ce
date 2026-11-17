@@ -85,7 +85,7 @@ public class SamplerTest {
         for (int y = 31; y <= 58; y++) set(2, y, 2, SAND, 0);          // column (2,2): sand up to 58, water 59..62
         ChunkSampler.sampleSurface(chunk, null, out);
         int waterRgb = MapShade.multiply(0x2F43F4, WATER_TINT);
-        int depth = 4, op = Math.min(236, 115 + depth * 18);
+        int depth = 4, op = Math.min(240, 150 + depth * 14);
         int want = MapShade.scale(MapShade.lerp(0xDBD3A0, waterRgb, op), 256 - depth * 4);
         check(out[2 << 4 | 2] == MapShade.pack(want, 62), "shallow water blends with the bed: " + Integer.toHexString(out[2 << 4 | 2]) + " want " + Integer.toHexString(MapShade.pack(want, 62)));
         int deepWant = MapShade.scale(waterRgb, 256 - 20 * 4);

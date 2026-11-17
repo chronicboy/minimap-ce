@@ -70,7 +70,7 @@ public class VisualTest {
         set(renderer, "viewX", viewX); set(renderer, "viewZ", viewZ); set(renderer, "viewScale", cfg.minimapScale());
         set(renderer, "viewRotation", rot); set(renderer, "viewCos", Math.cos(rot)); set(renderer, "viewSin", Math.sin(rot));
         buildShape.invoke(renderer);
-        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT);
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT | GL11.GL_LIGHTING_BIT); // same bits as renderMinimap
         drawMinimap.invoke(renderer, fakeMc, null, null, mapX, mapY, size, GW, GH, GUI_SCALE, 1.0f, yaw);
         GL11.glPopAttrib();
         // a few entity blips straight from the shared marker code
@@ -82,6 +82,8 @@ public class VisualTest {
         MapMarkers.entityArrow(t, cx + 18, cy + 25, 2.5, 0.22f, 0.90f, 0.35f);
         MapMarkers.entityArrow(t, cx + 30, cy - 20, 4.1, 0.25f, 0.75f, 1.0f);
         MapMarkers.entityArrow(t, cx - 30, cy + 22, 5.3, 1.0f, 0.80f, 0.15f);
+        MapMarkers.dot(t, cx + 2, cy + 34, 2.2, 0.96f, 0.22f, 0.22f);
+        MapMarkers.dot(t, cx - 12, cy + 30, 2.2, 0.22f, 0.90f, 0.35f);
         t.draw();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
     }
@@ -139,6 +141,7 @@ public class VisualTest {
             GL11.glDisable(GL11.GL_TEXTURE_2D); GL11.glColor4f(0.30f, 0.45f, 0.22f, 1f);
             GL11.glBegin(GL11.GL_QUADS); GL11.glVertex2f(0, 170); GL11.glVertex2f(0, GH); GL11.glVertex2f(GW, GH); GL11.glVertex2f(GW, 170); GL11.glEnd();
             GL11.glColor4f(1, 1, 1, 1); GL11.glEnable(GL11.GL_TEXTURE_2D); GL11.glEnable(GL11.GL_CULL_FACE); GL11.glEnable(GL11.GL_DEPTH_TEST); GL11.glEnable(GL11.GL_ALPHA_TEST);
+            GL11.glShadeModel(GL11.GL_FLAT); // what the game leaves set after drawing the world
 
             cfg.showChunkGrid = false; cfg.mapOpacity = 1.0f;
             minimap(10, 10, 128, true, 4.3, -3.7, 0, 200f, false);          // circle, 1x, north up
@@ -153,6 +156,7 @@ public class VisualTest {
             storage.tick();
         }
         int err = GL11.glGetError();
+        System.out.println("shade model restored to flat: " + (GL11.glGetInteger(GL11.GL_SHADE_MODEL) == GL11.GL_FLAT));
         System.out.println("GL error: " + err + ", depth test restored: " + GL11.glIsEnabled(GL11.GL_DEPTH_TEST) + ", cull restored: " + GL11.glIsEnabled(GL11.GL_CULL_FACE)
                 + ", alpha test restored: " + GL11.glIsEnabled(GL11.GL_ALPHA_TEST) + ", blend: " + GL11.glIsEnabled(GL11.GL_BLEND));
         save(new File(out, "minimaps.png"));

@@ -34,7 +34,8 @@ unzip -q -o "$NATIVES" -d "$OUT/natives"
 
 CP="$(win "$PWD/build/classes/java/main");$(win "$PWD/$MC");$(win "$LWJGL");$(win "$GSON");$(win "$GUAVA");$(win "$LOADER")"
 javac -nowarn -cp "$CP" -d "$OUT/classes" devtest/src/PureTest.java devtest/src/SamplerTest.java devtest/src/GLTest.java \
-	devtest/src/net/fabricmc/example/minimap/VisualTest.java 2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
+	devtest/src/RealMapView.java devtest/src/net/fabricmc/example/minimap/VisualTest.java \
+	devtest/src/net/fabricmc/example/minimap/HeadSheet.java 2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
 CP="$CP;$(win "$PWD/$OUT/classes")"
 LIB="-Djava.library.path=$(win "$PWD/$OUT/natives")"
 
@@ -43,6 +44,7 @@ echo "== pure";    java -cp "$CP" PureTest "$(win "$PWD/$RUN/pure")" || status=1
 echo "== sampler"; java -cp "$CP" SamplerTest || status=1
 echo "== gl";      java "$LIB" -cp "$CP" GLTest "$(win "$PWD/$RUN/gl")" || status=1
 echo "== visual";  java "$LIB" -cp "$CP" net.fabricmc.example.minimap.VisualTest "$(win "$PWD/$RUN/visual")" || status=1
+echo "== heads";   java -cp "$CP" net.fabricmc.example.minimap.HeadSheet "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/heads.png")" || status=1
 
 echo
 if [ $status -eq 0 ]; then echo "ALL OFFLINE CHECKS PASSED  (picture: $RUN/visual/minimaps.png)"; else echo "SOME CHECKS FAILED"; fi

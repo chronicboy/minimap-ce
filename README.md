@@ -1,53 +1,59 @@
 # Minimap CE
-A faithful, lightweight minimap mod for Better Than Wolves CE 3.0.0 and above (Minecraft 1.6.4).
+A faithful, lightweight minimap and world map for Better Than Wolves CE 3.0.0 and above (Minecraft 1.6.4).
 
 Minimap CE provides all the classic minimap functionality you need, themed to feel right at home with old-school Minecraft and BTW. It runs client-side only.
 
 ## Features
 
-### Classic Minimap
+### Minimap
 - **Texture-sampled block colors** — reads Minecraft's terrain atlas for accurate colors per block variant, and follows your resource pack.
 - **Topographic shading** — slope-based lighting for terrain depth, with water that darkens as it gets deeper.
-- **Circular or square map** with a premium beveled frame and compass labels (N/E/S/W).
+- **Biome tinting** for grass, leaves, vines and water.
+- **Circular or square map** with a beveled frame and compass labels (N/E/S/W).
 - **North-up or rotating** — optionally keep the way you are facing at the top.
-- **Zoom** — five levels from 4x to 1/4x, entities and waypoints track at all zoom levels.
-- **Smooth and light** — terrain is drawn from GPU textures, so the map scrolls smoothly at any frame rate and costs next to nothing.
-- **Dynamic HUD Proportions** — Minimap text automatically scales based on the size/zoom of your minimap for a perfectly clean look. 
+- **Zoom** — five levels from 4x to 1/4x.
+- **Adjustable size, corner and opacity.**
 - **Chunk grid overlay** (toggleable).
-- **Biome tinting** for grass, leaves, and foliage.
+- **Smooth and light** — terrain is drawn from GPU textures, so the map scrolls smoothly at any frame rate and costs next to nothing. Chunks are only read when they load or change.
+- **Nether support** — shows the floor of the level you are on and remembers what you have seen as you move between levels.
 
-### Full-Screen Topography
-- **Full-Screen Map** — Drag to pan, scroll to zoom towards the cursor, from close-up to an overview of everything you have explored.
-- **Right-Click Menu** — Create, edit, hide or delete waypoints and teleport straight from the map.
-- **Persistent Terrain** — Explored areas save to disk and display on the full-screen map even when far away, with intelligent silent patching if a chunk is loaded with missing data.
-- **Cross-Dimension Viewing** — Seamlessly browse map data from the Nether, End, or Overworld via UI tabs, without needing to travel there.
-- **Unpaused Journeys** — The settings menu allows you to leave the game unpaused while viewing the fullscreen map, perfect for long journeys or AFKing.
+### Full-Screen Map
+- **Explore everything you have seen** — drag to pan, scroll to zoom towards the cursor, from 16 pixels per block out to an overview of your whole explored world.
+- **Persistent terrain** — explored areas are saved per world and dimension, in the background, and stay on the map when you are far away.
+- **Cross-dimension viewing** — browse the Overworld, Nether and End maps from tabs without travelling there.
+- **Right-click menu** — create, edit, hide or delete waypoints, teleport, or re-center on yourself.
+- **Cursor readout** — coordinates and ground height under the mouse.
+- **Unpaused journeys** — optionally leave the game running while the map is open.
 
-### Waypoint Management
-- **Minimalist Map Markers** — Half-size clean square markers designed to reduce visual clutter against any terrain.
-- **Hoverable Labels** — To avoid map clutter, waypoint titles on the fullscreen map are hidden by default and appear seamlessly when hovered over!
-- **Add/Edit/Delete** classic waypoint markers.
-- **Cross-Dimension Waypoint List** — Access, manage, and toggle waypoints for any dimension natively from the waypoint GUI.
-- **Rei's "Add New" button layout** inside the waypoint manager.
-- **Death Waypoints** — Automatically saves your coordinates upon death and natively numbers subsequent deaths (e.g., Death, Death 2).
-- **In-world beacons** — Translucent beams with waypoint icons visible from any distance.
-- **Teleport directly to any waypoint** (lands you safely above ground).
-- **Per-world saving** — separates waypoint lists automatically based on the singleplayer world or multiplayer server.
+### Waypoints
+- **Lettered tiles** — each waypoint is a colored tile with its initial, on both maps. A small plain-square style is available if you prefer less clutter.
+- **Hoverable labels** — names and coordinates appear when you hover a waypoint on the full-screen map.
+- **Add / edit / delete**, pick from nine colors, toggle individually or all at once.
+- **Quick waypoint** — one key drops a waypoint where you stand.
+- **Cross-dimension waypoint list** — manage waypoints for any dimension from the waypoint screen.
+- **Death waypoints** — saved automatically and numbered (Death, Death 2, ...).
+- **Spawn point** — tracked per world, with its own toggle.
+- **In-world beacons** — translucent beams with an icon, and a name and distance label when you look at them.
+- **Teleport** to a waypoint or any explored spot on the map. This sends a chat command, so it needs cheats or operator rights; the command can be changed (see Configuration).
+- **Per-world saving** — separate lists for every singleplayer world and multiplayer server.
 
 ### Entity Radar
-- **Mob arrows visible on the minimap** — categorized by color: Red (hostile), Green (passive), Yellow (neutral).
-- **Player chevron** in blue.
+- **Mob heads** — nearby mobs and players show their own face, cut from their skin, so it follows resource packs and BTW's varied animal skins.
+- **Arrows or dots** if you prefer — arrows point where the mob is looking.
+- **Color coded** — red for hostile, green for passive animals and villagers, blue for players, yellow for anything else.
+- Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
 
 ### Info HUD
-- **Tracks Time** — Day count, HH:MM, Day/Night indicator.
-- **Tracks Coordinates** — (x, z, y) with dimension ID.
-- **Displays current Biome name**.
+- **Clock** — day number, day or night, and minutes:seconds into the current day.
+- **Coordinates** — the block you are standing on, as x, z, y.
+- **Biome** name.
+- Each can be turned off, and the text shrinks to match small minimaps.
 
 ## Controls
 | Key | Action |
 | --- | --- |
 | `J` | Open full-screen map |
-| `O` | Open minimap settings |
+| `O` | Open map settings |
 | `B` | Open waypoint manager |
 | `N` | New waypoint where you stand |
 | `M` | Toggle minimap |
@@ -56,7 +62,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 | `]` | Increase minimap size |
 | `[` | Decrease minimap size |
 
-All keys can be rebound in the Controls menu.
+All of these can be rebound under Options > Controls; they start with `[Minimap]`.
 
 On the full-screen map:
 
@@ -68,9 +74,51 @@ On the full-screen map:
 | `C` | Follow the player again |
 | `Double-click` | New waypoint |
 | `Right-click` | Context menu |
+| `Esc` or `J` | Close |
+
+## Settings
+Press `O` in game. The minimap stays visible behind the screen and updates as you change things; hover an option for an explanation.
+
+- **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding.
+- **Markers & Info** — entity radar and its icon style, waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
+- **World Map** — whether the full-screen map pauses the game, and whether teleport options are shown.
+
+## Configuration
+Everything lives in your game folder under `config/`:
+
+| Path | Contents |
+| --- | --- |
+| `minimap-ce.conf` | All settings. Safe to edit while the game is closed. |
+| `minimap-ce-waypoints/` | Waypoints (one JSON file per world and dimension) and the recorded spawn point. |
+| `minimap-ce-maps-v4/` | Explored map data, one folder per world and dimension. Delete a folder to reset that map. |
+
+The teleport command is the one setting without a button. In `minimap-ce.conf`:
+
+```
+teleportCommand="/tp {x} {y} {z}"
+```
+
+`{x}`, `{y}`, `{z}`, `{dim}` (dimension id) and `{name}` (waypoint name) are filled in. A command that uses `{dim}` is needed to teleport to a waypoint in another dimension on a server.
+
+## Upgrading from 3.x
+- Your waypoints, settings and explored maps carry over. Old map data in `config/minimap-ce-maps-v3/` is imported as you look at it and is never changed, so you can go back to a 3.x jar and still have your old map.
+- Areas explored with 3.x keep their old colors until you visit them again.
+- The entity radar shows mob heads and waypoints show lettered tiles by default; the 3.x arrows and small squares are one click away in the settings.
 
 ## Installation
-1. Install **Better Than Wolves CE 3.0.x** and the Fabric Loader (0.14.19 or later recommended).
+1. Install **Better Than Wolves CE 3.0.0 or later** with Fabric Loader 0.14.19 or later.
 2. Download the .jar file from Modrinth https://modrinth.com/mod/minimap-ce
-3. Drop the `.jar` into your Minecraft `.minecraft/mods/` folder.
+3. Drop the `.jar` into your `.minecraft/mods/` folder.
 4. Launch the game!
+
+## Building
+Requires Java 17.
+
+```
+./gradlew.bat build --no-daemon
+./gradlew.bat --stop
+```
+
+The jar is written to `build/libs/`. On Windows, do not run `gradlew clean`.
+
+The map engine has tests that run without starting the game, including rendering on an offscreen OpenGL surface; see [devtest/README.md](devtest/README.md).

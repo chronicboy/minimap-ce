@@ -78,6 +78,10 @@ public class GuiFullscreenMap extends GuiScreen {
 	private final double[] rectX = new double[4];
 	private final double[] rectY = new double[4];
 
+	// Waypoint tile letters, queued while the tiles themselves are batched.
+	private final List<int[]> letterSpots = new ArrayList<int[]>();
+	private final List<String> letterTexts = new ArrayList<String>();
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public void initGui() {
@@ -349,7 +353,7 @@ public class GuiFullscreenMap extends GuiScreen {
 
 		int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
 		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT
-				| GL11.GL_SCISSOR_BIT);
+				| GL11.GL_SCISSOR_BIT | GL11.GL_LIGHTING_BIT);
 		try {
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
 			GL11.glDisable(GL11.GL_CULL_FACE);
@@ -358,6 +362,7 @@ public class GuiFullscreenMap extends GuiScreen {
 			GL11.glEnable(GL11.GL_BLEND);
 			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 			GL11.glLineWidth(1.0f);
+			GL11.glShadeModel(GL11.GL_SMOOTH);
 			GL11.glDisable(GL11.GL_TEXTURE_2D);
 
 			fill(t, 0, 0, this.width, this.height, 0.08f, 0.08f, 0.10f, 1.0f);
@@ -390,11 +395,13 @@ public class GuiFullscreenMap extends GuiScreen {
 			// ---- Markers
 			boolean mouseOnMap = inMapArea(mx, my) && !menuOpen;
 			double bestDist = HOVER_RADIUS * HOVER_RADIUS;
+			letterSpots.clear();
+			letterTexts.clear();
 			t.startDrawing(GL11.GL_TRIANGLES);
 			if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
 				double sx = toScreenX(spawnX() + 0.5), sy = toScreenY(spawnZ() + 0.5);
 				if (onScreen(sx, sy)) {
-					MapMarkers.waypoint(t, Math.round(sx), Math.round(sy), 3, 0x0066CC);
+					addWaypointIcon(t, sx, sy, 0x0066CC, "Spawn");
 					double d = (mx - sx) * (mx - sx) + (my - sy) * (my - sy);
 					if (mouseOnMap && d < bestDist) {
 						bestDist = d;
@@ -411,7 +418,7 @@ public class GuiFullscreenMap extends GuiScreen {
 					double sx = toScreenX(wp.x + 0.5), sy = toScreenY(wp.z + 0.5);
 					if (!onScreen(sx, sy))
 						continue;
-					MapMarkers.waypoint(t, Math.round(sx), Math.round(sy), 3, wp.color);
+					addWaypointIcon(t, sx, sy, wp.color, wp.name);
 					double d = (mx - sx) * (mx - sx) + (my - sy) * (my - sy);
 					if (mouseOnMap && d < bestDist) {
 						bestDist = d;
@@ -429,6 +436,17 @@ public class GuiFullscreenMap extends GuiScreen {
 					MapMarkers.playerArrow(t, sx, sy, Math.toRadians(yaw + 90.0), 8.0);
 			}
 			t.draw();
+			if (fr != null && !letterSpots.isEmpty()) {
+				GL11.glEnable(GL11.GL_TEXTURE_2D);
+				for (int i = 0; i < letterSpots.size(); i++) {
+					int[] spot = letterSpots.get(i);
+					String letter = letterTexts.get(i);
+					fr.drawString(letter, MapMarkers.tileLetterX(spot[0], fr.getStringWidth(letter)), spot[1] - 3,
+							spot[2]);
+				}
+				GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+				GL11.glDisable(GL11.GL_TEXTURE_2D);
+			}
 			GL11.glDisable(GL11.GL_SCISSOR_TEST);
 
 			// ---- Bars
@@ -471,10 +489,10 @@ public class GuiFullscreenMap extends GuiScreen {
 
 				if (!menuOpen) {
 					if (hovered != null) {
-						drawLabel(t, fr, hovered.name + "  §7" + hovered.x + ", " + hovered.y + ", " + hovered.z,
+						drawLabel(t, fr, hovered.name + "  \u00a77" + hovered.x + ", " + hovered.y + ", " + hovered.z,
 								toScreenX(hovered.x + 0.5), toScreenY(hovered.z + 0.5), hovered.color);
 					} else if (hoveredSpawn) {
-						drawLabel(t, fr, "Spawn  §7" + spawnX() + ", " + spawnZ(), toScreenX(spawnX() + 0.5),
+						drawLabel(t, fr, "Spawn  \u00a77" + spawnX() + ", " + spawnZ(), toScreenX(spawnX() + 0.5),
 								toScreenY(spawnZ() + 0.5), 0x5599FF);
 					}
 				} else {
@@ -488,6 +506,17 @@ public class GuiFullscreenMap extends GuiScreen {
 		}
 
 		super.drawScreen(mouseX, mouseY, partialTicks);
+	}
+
+	private void addWaypointIcon(Tessellator t, double sx, double sy, int rgb, String name) {
+		int x = (int) Math.round(sx), y = (int) Math.round(sy);
+		if (MapConfig.instance.waypointIconStyle == MapConfig.WAYPOINT_LETTERS) {
+			MapMarkers.waypointTile(t, x, y, rgb);
+			letterSpots.add(new int[] { x, y, MapMarkers.tileLetterColor(rgb) });
+			letterTexts.add(MapMarkers.tileLetter(name));
+		} else {
+			MapMarkers.waypoint(t, x, y, 3, rgb);
+		}
 	}
 
 	private boolean onScreen(double sx, double sy) {
@@ -524,9 +553,9 @@ public class GuiFullscreenMap extends GuiScreen {
 
 		String mid = "Zoom: " + formatScale(targetScale);
 		if (!complete)
-			mid += "  §8loading...";
+			mid += "  \u00a78loading...";
 		else if (!follow && viewingPlayerDimension())
-			mid += "  §8[C] follow";
+			mid += "  \u00a78[C] follow";
 		int midW = fr.getStringWidth(mid);
 		int midX = this.width / 2 - midW / 2;
 		// Only when it fits between the two side texts.
@@ -611,7 +640,7 @@ public class GuiFullscreenMap extends GuiScreen {
 			addMenuItem(menuWaypoint.enabled ? "Hide" : "Show", ACTION_TOGGLE);
 			if (canTeleport)
 				addMenuItem("Teleport to waypoint", ACTION_TELEPORT_WAYPOINT);
-			addMenuItem("§cDelete", ACTION_DELETE);
+			addMenuItem("\u00a7cDelete", ACTION_DELETE);
 		} else {
 			addMenuItem("New waypoint here", ACTION_NEW_WAYPOINT);
 			if (canTeleport)
@@ -684,7 +713,7 @@ public class GuiFullscreenMap extends GuiScreen {
 			case ACTION_TELEPORT_HERE: {
 				int y = surfaceY(menuWorldX, menuWorldZ);
 				if (y < 0) {
-					this.mc.thePlayer.addChatMessage("§c[Minimap] Can't teleport there: that spot is unexplored.");
+					this.mc.thePlayer.addChatMessage("\u00a7c[Minimap] Can't teleport there: that spot is unexplored.");
 				} else {
 					teleport(menuWorldX, y, menuWorldZ, "Map");
 				}

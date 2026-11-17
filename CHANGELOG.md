@@ -9,16 +9,19 @@ A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explor
 * **Rotating minimap** - optional "follows player" mode where up is always the way you are facing (compass letters orbit the frame).
 * **Square minimap** - the shape setting now actually works.
 * **Five minimap zoom levels** - 4x, 2x, 1x, 1/2x and 1/4x (was three).
-* **Minimap opacity** - 100% down to 40%.
+* **Minimap opacity** - 100% down to 25%.
+* **Mob heads on the radar** - nearby mobs and players show their own face, cut from their skin (follows resource packs and BTW's varied animal skins), with a rim in the usual hostile/passive/player color. The 3.x arrows and plain dots are available as alternative styles.
+* **Lettered waypoint tiles** - waypoints are colored tiles with their initial on both maps. The small 3.x squares are still available.
+* **New settings screen** - three tabs, sliders for size, zoom and opacity, the minimap drawn live behind it so changes show immediately, and an explanation of whatever option you hover.
 * **Fullscreen map rebuilt** - drag to pan and scroll to zoom towards the cursor with no stutter, hold WASD/arrow keys to glide, `C` to follow the player again. Zooms from 16 pixels per block out to an overview of everything you have ever explored.
 * **Right-click menu on the fullscreen map** - new waypoint here, teleport here, centre on player; on a waypoint: edit, hide/show, teleport, delete.
 * **Truer colours** - every block state has its own colour (wool, planks, stained clay and friends no longer all look like the first variant), spruce and birch leaves use their own tints, swamp water is swamp coloured.
-* **Water depth** - shallows show the bed through the water, deep water is darker.
+* **Water depth** - shallows hint at the bed through the water, deep water is darker.
 * **Smoother relief shading** - based on the slope towards both north and west, scaled by steepness, with a slight brightening at altitude.
 * **Nether map** - shows the floor of the level you are on (lava seas, bridges, tunnels) with solid rock dark, and remembers floors you have already seen as you move between levels.
 * **Cursor height** - the fullscreen map shows the ground level under the cursor, and waypoints created from the map are placed at that height instead of y 64.
 * **New rebindable keys** - zoom in (`=`), zoom out (`-`), new waypoint here (`N`), toggle minimap (`M`). Numpad +/- still zoom.
-* **Clock toggle** and shift-click to step backwards through multi-value settings.
+* **Clock toggle**, and shift-click to step backwards through multi-value settings.
 * **Resource packs** - map colours update when the resource pack changes.
 
 ### Bug Fixes

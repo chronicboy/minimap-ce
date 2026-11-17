@@ -1,5 +1,6 @@
 package net.fabricmc.example.minimap;
 
+import net.fabricmc.example.minimap.engine.BlockColors;
 import net.fabricmc.example.minimap.engine.MapDraw;
 import net.fabricmc.example.minimap.engine.MapEngine;
 import net.minecraft.src.BiomeGenBase;
@@ -13,6 +14,7 @@ import net.minecraft.src.EntityVillager;
 import net.minecraft.src.FontRenderer;
 import net.minecraft.src.IMob;
 import net.minecraft.src.Minecraft;
+import net.minecraft.src.ResourceLocation;
 import net.minecraft.src.Tessellator;
 import net.minecraft.src.World;
 import org.lwjgl.opengl.GL11;
@@ -41,6 +43,21 @@ public class MinimapRenderer {
 	private double centerX, centerY;
 	private int radius;
 	private boolean circle;
+
+	// Marker parts that need a texture, queued while the flat shapes are batched.
+	private static final int MAX_LETTERS = 96;
+	private static final double HEAD_HALF_SIZE = 4.0;
+	private final int[] letterX = new int[MAX_LETTERS];
+	private final int[] letterY = new int[MAX_LETTERS];
+	private final int[] letterColor = new int[MAX_LETTERS];
+	private final String[] letterText = new String[MAX_LETTERS];
+	private int letterCount;
+	private final ResourceLocation[] headTexture = new ResourceLocation[MAX_ENTITIES];
+	private final EntityIcons.Head[] headIcon = new EntityIcons.Head[MAX_ENTITIES];
+	private final double[] headX = new double[MAX_ENTITIES];
+	private final double[] headY = new double[MAX_ENTITIES];
+	private int headCount;
+	private int iconGeneration = -1;
 
 	// HUD text cache
 	private String cachedClockStr = "";
@@ -105,7 +122,8 @@ public class MinimapRenderer {
 		viewSin = Math.sin(viewRotation);
 		buildShape();
 
-		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT);
+		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT
+				| GL11.GL_LIGHTING_BIT);
 		try {
 			drawMinimap(mc, world, player, mapX, mapY, mapSize, screenWidth, screenHeight, guiScale, partialTicks,
 					yaw);
@@ -128,6 +146,9 @@ public class MinimapRenderer {
 		GL11.glEnable(GL11.GL_BLEND);
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 		GL11.glLineWidth(1.0f);
+		// The game leaves flat shading on after drawing the world. Gradients (the frame's soft
+		// shadow) need smooth shading, otherwise every other triangle comes out solid: "teeth".
+		GL11.glShadeModel(GL11.GL_SMOOTH);
 
 		// ---- Background (shows through wherever nothing is explored yet)
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -152,22 +173,41 @@ public class MinimapRenderer {
 
 		drawFrame(t);
 
-		// ---- Markers: one batch for spawn, waypoints, entities and the player arrow
+		// ---- Markers: one batch for all flat shapes (entities first, so waypoints and the player stay on top)
+		letterCount = 0;
+		headCount = 0;
+		if (BlockColors.generation() != iconGeneration) {
+			// Resource pack changed: skins may have a different shape now.
+			iconGeneration = BlockColors.generation();
+			EntityIcons.clearCache();
+		}
 		t.startDrawing(GL11.GL_TRIANGLES);
+		if (cfg.showEntities)
+			addEntityMarkers(t, world, player, partialTicks);
 		if (cfg.showSpawnWaypoint && SpawnTracker.instance.hasSpawn())
 			addSpawnMarker(t, world);
 		if (cfg.showWaypoints)
 			addWaypointMarkers(t);
-		if (cfg.showEntities)
-			addEntityMarkers(t, world, player, partialTicks);
 		MapMarkers.playerArrow(t, centerX, centerY, Math.toRadians(yaw + 90.0) + viewRotation, 7.0);
 		t.draw();
 
-		// ---- Text
+		// ---- Textured parts of the markers: mob faces, then waypoint letters
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 		GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+		for (int i = 0; i < headCount; i++) {
+			EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i], HEAD_HALF_SIZE);
+			headTexture[i] = null;
+			headIcon[i] = null;
+		}
 		FontRenderer fr = mc.fontRenderer;
 		if (fr != null) {
+			for (int i = 0; i < letterCount; i++) {
+				String letter = letterText[i];
+				fr.drawString(letter, MapMarkers.tileLetterX(letterX[i], fr.getStringWidth(letter)), letterY[i] - 3,
+						letterColor[i]);
+				letterText[i] = null;
+			}
+			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 			if (cfg.showCompass)
 				drawCompassLabels(fr);
 			drawInfoOverlay(fr, world, player, mapX, mapY, mapSize, screenWidth, screenHeight);
@@ -333,7 +373,7 @@ public class MinimapRenderer {
 			spawnX = SpawnTracker.instance.getSpawnX();
 			spawnZ = SpawnTracker.instance.getSpawnZ();
 		}
-		addEdgeClampedMarker(t, spawnX + 0.5, spawnZ + 0.5, 0x0066CC);
+		addWaypointMarker(t, spawnX + 0.5, spawnZ + 0.5, 0x0066CC, "Spawn");
 	}
 
 	private void addWaypointMarkers(Tessellator t) {
@@ -341,24 +381,39 @@ public class MinimapRenderer {
 		for (int i = 0, n = waypoints.size(); i < n; i++) {
 			Waypoint wp = waypoints.get(i);
 			if (wp.enabled)
-				addEdgeClampedMarker(t, wp.x + 0.5, wp.z + 0.5, wp.color);
+				addWaypointMarker(t, wp.x + 0.5, wp.z + 0.5, wp.color, wp.name);
 		}
 	}
 
 	/** Marker at its map position, or pinned to the border in its direction when out of range. */
-	private void addEdgeClampedMarker(Tessellator t, double worldX, double worldZ, int rgb) {
+	private void addWaypointMarker(Tessellator t, double worldX, double worldZ, int rgb, String name) {
+		boolean tiles = MapConfig.instance.waypointIconStyle == MapConfig.WAYPOINT_LETTERS;
+		double margin = tiles ? 6.0 : 4.0;
 		double dx = projectX(worldX, worldZ);
 		double dy = projectY(worldX, worldZ);
-		if (!inside(dx, dy, 4.0)) {
-			double f = edgeFactor(dx, dy, 5.0);
+		if (!inside(dx, dy, margin)) {
+			double f = edgeFactor(dx, dy, margin + 1.0);
 			dx *= f;
 			dy *= f;
 		}
-		MapMarkers.waypoint(t, Math.round(centerX + dx), Math.round(centerY + dy), 2, rgb);
+		int x = (int) Math.round(centerX + dx), y = (int) Math.round(centerY + dy);
+		if (!tiles) {
+			MapMarkers.waypoint(t, x, y, 2, rgb);
+			return;
+		}
+		MapMarkers.waypointTile(t, x, y, rgb);
+		if (letterCount < MAX_LETTERS) {
+			letterX[letterCount] = x;
+			letterY[letterCount] = y;
+			letterColor[letterCount] = MapMarkers.tileLetterColor(rgb);
+			letterText[letterCount] = MapMarkers.tileLetter(name);
+			letterCount++;
+		}
 	}
 
 	private void addEntityMarkers(Tessellator t, World world, EntityPlayer player, float partialTicks) {
 		List<?> entities = world.loadedEntityList;
+		int style = MapConfig.instance.entityIconStyle;
 		double reach = (circle ? radius : radius * 1.4143) / viewScale;
 		int count = 0;
 		for (int i = 0, n = entities.size(); i < n && count < MAX_ENTITIES; i++) {
@@ -384,8 +439,10 @@ public class MinimapRenderer {
 			double ez = e.prevPosZ + (e.posZ - e.prevPosZ) * partialTicks;
 			double dx = projectX(ex, ez);
 			double dy = projectY(ex, ez);
-			if (!inside(dx, dy, 3.0))
+			if (!inside(dx, dy, style == MapConfig.ENTITY_HEADS ? 5.0 : 3.0))
 				continue;
+			double x = centerX + dx, y = centerY + dy;
+			count++;
 
 			// Hostile = crimson, passive = emerald, players = cyan, anything else = amber.
 			float r = 1.0f, g = 0.80f, b = 0.15f;
@@ -403,9 +460,31 @@ public class MinimapRenderer {
 				b = 1.0f;
 			}
 
-			float eyaw = e.prevRotationYaw + (e.rotationYaw - e.prevRotationYaw) * partialTicks;
-			MapMarkers.entityArrow(t, centerX + dx, centerY + dy, Math.toRadians(eyaw + 90.0) + viewRotation, r, g, b);
-			count++;
+			if (style == MapConfig.ENTITY_ARROWS) {
+				float eyaw = e.prevRotationYaw + (e.rotationYaw - e.prevRotationYaw) * partialTicks;
+				MapMarkers.entityArrow(t, x, y, Math.toRadians(eyaw + 90.0) + viewRotation, r, g, b);
+				continue;
+			}
+			if (style == MapConfig.ENTITY_HEADS) {
+				EntityIcons.Head head = EntityIcons.forEntity(e);
+				ResourceLocation texture = head != null ? EntityIcons.textureOf(e) : null;
+				if (texture != null) {
+					// Snapped to whole pixels so the face texels stay crisp; thin rim in the category colour.
+					double hx = Math.rint(x), hy = Math.rint(y);
+					double hw = EntityIcons.halfWidth(head, HEAD_HALF_SIZE);
+					double hh = EntityIcons.halfHeight(head, HEAD_HALF_SIZE);
+					MapMarkers.rect(t, hx - hw - 1.0, hy - hh - 1.0, hx + hw + 1.0, hy + hh + 1.0, 0.03f, 0.03f, 0.03f,
+							1.0f);
+					MapMarkers.rect(t, hx - hw - 0.5, hy - hh - 0.5, hx + hw + 0.5, hy + hh + 0.5, r, g, b, 1.0f);
+					headTexture[headCount] = texture;
+					headIcon[headCount] = head;
+					headX[headCount] = hx;
+					headY[headCount] = hy;
+					headCount++;
+					continue;
+				}
+			}
+			MapMarkers.dot(t, x, y, 2.2, r, g, b);
 		}
 	}
 
