@@ -206,7 +206,7 @@ public class GuiMapSettings extends GuiScreen {
 			add(BTN_CHUNK_GRID, left, y, "Draw chunk borders (every 16 blocks) on the maps.");
 			add(BTN_COMPASS, right, y, "N, E, S and W around the minimap.");
 			y += rowStep;
-			add(BTN_CLOCK, left, y, "Day counter and time of day above the minimap.");
+			add(BTN_CLOCK, left, y, "Day counter and time above the minimap. The number in brackets counts the days to the next gloom (new moon) night.");
 			add(BTN_COORDINATES, right, y, "Your block position (x, z, y) under the minimap.");
 			y += rowStep;
 			add(BTN_BIOME, left, y, "Name of the biome you are standing in, with (Caves) while the cave view is on.");

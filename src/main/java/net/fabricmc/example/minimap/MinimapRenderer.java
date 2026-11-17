@@ -174,17 +174,19 @@ public class MinimapRenderer {
 		// The game leaves flat shading on after drawing the world. Gradients (the frame's soft
 		// shadow) need smooth shading, otherwise every other triangle comes out solid: "teeth".
 		GL11.glShadeModel(GL11.GL_SMOOTH);
+		pixelScale = Math.max(1, guiScale);
 
-		// ---- Background (shows through wherever nothing is explored yet)
+		// ---- Background: unexplored ground (rotated square maps reach 1.4x farther into their corners)
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		t.startDrawing(GL11.GL_TRIANGLE_FAN);
-		t.setColorRGBA_F(0.07f, 0.07f, 0.09f, 0.88f * opacity);
+		t.setColorRGBA_F(0.085f, 0.09f, 0.105f, opacity);
 		t.addVertex(centerX, centerY, 0.0);
 		for (int i = 0; i <= shapeN; i++) {
 			int j = i % shapeN;
 			t.addVertex(centerX + shapeX[j], centerY + shapeY[j], 0.0);
 		}
 		t.draw();
+		drawHatch(t, opacity);
 
 		// ---- Terrain
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -196,6 +198,9 @@ public class MinimapRenderer {
 		if (cfg.showChunkGrid)
 			drawChunkGrid(t);
 
+		// Inner shadow: the map looks set into the frame rather than pasted on.
+		double r = radius;
+		ring(t, (r - 7.0) / r, 1.0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.30f * opacity);
 		drawFrame(t);
 
 		// ---- Markers: one batch for all flat shapes (entities first, so waypoints and the player stay on top)
@@ -235,10 +240,11 @@ public class MinimapRenderer {
 				letterText[i] = null;
 			}
 			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-			if (cfg.showCompass)
-				drawCompassLabels(fr);
-			drawInfoOverlay(fr, world, player, mapX, mapY, mapSize, screenWidth, screenHeight);
 		}
+		if (cfg.showCompass)
+			drawCompass(t, fr);
+		if (fr != null)
+			drawInfoOverlay(fr, world, player, mapX, mapY, mapSize, screenWidth, screenHeight);
 		GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
@@ -295,13 +301,49 @@ public class MinimapRenderer {
 
 	// ------------------------------------------------------------------ frame
 
-	/** Bevelled border: soft outer shadow, dark ring, mid ring and a faint inner highlight. */
+	/** Width of the frame's metal band in GUI pixels: a whole number of physical pixels, so it stays crisp. */
+	private double bandWidth() {
+		return Math.max(2L, Math.round(1.5 * pixelScale)) / (double) pixelScale;
+	}
+
+	/**
+	 * Frame around the map: a soft drop shadow, a crisp dark outline, a metal band lit from above and
+	 * a fine dark line where it meets the map. Every edge sits on a physical pixel.
+	 */
 	private void drawFrame(Tessellator t) {
-		double r = radius;
-		ring(t, (r + 1.5) / r, (r + 4.5) / r, 0.0f, 0.0f, 0.0f, 0.40f, 0.0f, 0.0f, 0.0f, 0.0f);
-		ring(t, r / r, (r + 1.5) / r, 0.15f, 0.15f, 0.18f, 1.0f, 0.15f, 0.15f, 0.18f, 1.0f);
-		ring(t, (r - 1.0) / r, r / r, 0.30f, 0.30f, 0.35f, 1.0f, 0.30f, 0.30f, 0.35f, 1.0f);
-		ring(t, (r - 1.6) / r, (r - 1.0) / r, 0.55f, 0.55f, 0.60f, 0.30f, 0.55f, 0.55f, 0.60f, 0.30f);
+		double r = radius, u = 1.0 / pixelScale, band = bandWidth();
+		double outline = r + band + u;
+		ring(t, outline / r, (outline + 5.0) / r, 0.0f, 0.0f, 0.0f, 0.45f, 0.0f, 0.0f, 0.0f, 0.0f);
+		ring(t, (r + band) / r, outline / r, 0.02f, 0.02f, 0.03f, 1.0f, 0.02f, 0.02f, 0.03f, 1.0f);
+		litRing(t, 1.0, (r + band) / r, 0.66f, 0.69f, 0.76f, 0.27f, 0.29f, 0.34f);
+		ring(t, (r - u) / r, 1.0, 0.03f, 0.03f, 0.04f, 0.85f, 0.03f, 0.03f, 0.04f, 0.85f);
+	}
+
+	/** A solid ring shaded from the top colour to the bottom colour, as if lit from above. */
+	private void litRing(Tessellator t, double inner, double outer, float rt, float gt, float bt, float rb, float gb,
+			float bb) {
+		t.startDrawing(GL11.GL_TRIANGLE_STRIP);
+		for (int i = 0; i <= shapeN; i++) {
+			int j = i % shapeN;
+			float f = (float) ((shapeY[j] / radius + 1.0) * 0.5);
+			t.setColorRGBA_F(rt + (rb - rt) * f, gt + (gb - gt) * f, bt + (bb - bt) * f, 1.0f);
+			t.addVertex(centerX + shapeX[j] * inner, centerY + shapeY[j] * inner, 0.0);
+			t.addVertex(centerX + shapeX[j] * outer, centerY + shapeY[j] * outer, 0.0);
+		}
+		t.draw();
+	}
+
+	/** Faint diagonal hatching, so unexplored ground reads as "not mapped yet" instead of as a hole. */
+	private void drawHatch(Tessellator t, float opacity) {
+		double spacing = 4.0, s = Math.sqrt(0.5);
+		int n = (int) Math.ceil(radius * 1.4143 / spacing);
+		t.startDrawing(GL11.GL_LINES);
+		t.setColorRGBA_F(1.0f, 1.0f, 1.0f, 0.045f * opacity);
+		for (int k = -n; k <= n; k++) {
+			double off = k * spacing;
+			addClippedLine(t, off * s, -off * s, s, s);
+		}
+		t.draw();
 	}
 
 	private void ring(Tessellator t, double inner, double outer, float r0, float g0, float b0, float a0, float r1,
@@ -521,32 +563,82 @@ public class MinimapRenderer {
 
 	// ------------------------------------------------------------------- text
 
-	private void drawCompassLabels(FontRenderer fr) {
-		// Screen direction of world north is R * (0, -1); east is R * (1, 0).
-		drawCompassLabel(fr, "N", viewSin, -viewCos);
-		drawCompassLabel(fr, "S", -viewSin, viewCos);
-		drawCompassLabel(fr, "E", viewCos, viewSin);
-		drawCompassLabel(fr, "W", -viewCos, -viewSin);
-	}
+	private static final String[] COMPASS = { "N", "E", "S", "W" };
+	private static final int BADGE_SEGMENTS = 24;
+	private final double[] compassX = new double[4];
+	private final double[] compassY = new double[4];
 
-	private void drawCompassLabel(FontRenderer fr, String text, double dirX, double dirY) {
-		double dist = radius + 2;
-		if (!circle) {
-			double m = Math.max(Math.abs(dirX), Math.abs(dirY));
-			if (m > 1.0e-6)
-				dist /= m;
+	/** Cardinal letters on round badges riding the frame; north in red. */
+	private void drawCompass(Tessellator t, FontRenderer fr) {
+		double u = 1.0 / pixelScale;
+		double onBand = radius + bandWidth() * 0.5;
+		for (int i = 0; i < 4; i++) {
+			// Screen direction of world north is R * (0, -1), east R * (1, 0), and so on clockwise.
+			double a = i * Math.PI * 0.5;
+			double wx = Math.sin(a), wz = -Math.cos(a);
+			double dx = viewCos * wx - viewSin * wz, dy = viewSin * wx + viewCos * wz;
+			double dist = onBand;
+			if (!circle) {
+				double m = Math.max(Math.abs(dx), Math.abs(dy));
+				if (m > 1.0e-6)
+					dist /= m;
+			}
+			// Centre on a physical pixel corner: the 5 x 7 letter then sits exactly in the middle.
+			compassX[i] = Math.rint((centerX + dx * dist) * pixelScale) / pixelScale;
+			compassY[i] = Math.rint((centerY + dy * dist) * pixelScale) / pixelScale;
 		}
-		int x = (int) Math.round(centerX + dirX * dist - fr.getStringWidth(text) / 2.0);
-		int y = (int) Math.round(centerY + dirY * dist - 4.0);
-		drawStringWithOutline(fr, text, x, y, 0xFFFFFF, 0x000000);
+
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		t.startDrawing(GL11.GL_TRIANGLES);
+		double rad = 5.5;
+		for (int i = 0; i < 4; i++) {
+			double x = compassX[i], y = compassY[i];
+			disc(t, x, y + u, rad + u, 0.0f, 0.0f, 0.0f, 0.45f, 0.45f); // drop shadow
+			disc(t, x, y, rad, 0.62f, 0.65f, 0.72f, 1.0f, 1.0f); // rim
+			disc(t, x, y, rad - u, 0.07f, 0.08f, 0.10f, 1.0f, 1.0f);
+		}
+		t.draw();
+		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		if (fr == null)
+			return;
+		for (int i = 0; i < 4; i++) {
+			String s = COMPASS[i];
+			// Glyphs are 7 high and their advance is one more than their width.
+			double left = Math.rint((compassX[i] - (fr.getStringWidth(s) - 1) * 0.5) * pixelScale) / pixelScale;
+			double top = Math.rint((compassY[i] - 3.5) * pixelScale) / pixelScale;
+			GL11.glPushMatrix();
+			GL11.glTranslated(left, top, 0.0);
+			fr.drawString(s, 0, 0, i == 0 ? 0xFF5A5A : 0xE6E6E6);
+			GL11.glPopMatrix();
+		}
 	}
 
-	private void drawStringWithOutline(FontRenderer fr, String text, int x, int y, int color, int outlineColor) {
-		fr.drawString(text, x + 1, y, outlineColor);
-		fr.drawString(text, x - 1, y, outlineColor);
-		fr.drawString(text, x, y + 1, outlineColor);
-		fr.drawString(text, x, y - 1, outlineColor);
-		fr.drawString(text, x, y, color);
+	/** A filled disc as triangles; the rim colour alpha can differ from the centre for a soft edge. */
+	private static void disc(Tessellator t, double x, double y, double rad, float r, float g, float b, float centerAlpha,
+			float rimAlpha) {
+		double prevX = x + rad, prevY = y;
+		for (int i = 1; i <= BADGE_SEGMENTS; i++) {
+			double a = i * 2.0 * Math.PI / BADGE_SEGMENTS;
+			double nx = x + Math.cos(a) * rad, ny = y + Math.sin(a) * rad;
+			t.setColorRGBA_F(r, g, b, centerAlpha);
+			t.addVertex(x, y, 0.0);
+			t.setColorRGBA_F(r, g, b, rimAlpha);
+			t.addVertex(nx, ny, 0.0);
+			t.addVertex(prevX, prevY, 0.0);
+			prevX = nx;
+			prevY = ny;
+		}
+	}
+
+	/**
+	 * Days until the next gloom night. BTW's "hardcore of darkness" makes the new moon pitch black:
+	 * World.computeOverworldSunBrightnessWithMoonPhases uses phase ((time - 12000) / 24000) % 8, which
+	 * is 4 (no moonlight) on the evening and night of days 5, 13, 21, ... (day index 4 mod 8).
+	 *
+	 * @return 0 when tonight is a gloom night
+	 */
+	static int daysToGloom(long dayIndex) {
+		return (int) Math.floorMod(4L - dayIndex, 8L);
 	}
 
 	/** Clock above the map, coordinates and biome below it (or above, for bottom positions). */
@@ -563,14 +655,23 @@ public class MinimapRenderer {
 		float textScale = Math.max(0.5f, Math.min(1.0f, mapSize / 128.0f));
 		float invScale = 1.0f / textScale;
 
-		// Clock: day counter plus minutes:seconds into the current day, refreshed once per second.
+		// Clock: day counter, days to the next gloom night, and minutes:seconds into the current day,
+		// refreshed once per second.
 		long time = world.getWorldTime();
 		long second = Math.floorMod(time, 24000L) / 20L;
 		if (second != lastClockSecond || cachedClockStr.isEmpty()) {
 			lastClockSecond = second;
-			long day = Math.floorDiv(time, 24000L) + 1;
-			StringBuilder sb = new StringBuilder(20);
-			sb.append(world.isDaytime() ? "Day " : "Night ").append(day).append(", ");
+			long dayIndex = Math.floorDiv(time, 24000L);
+			StringBuilder sb = new StringBuilder(32);
+			sb.append(world.isDaytime() ? "Day " : "Night ").append(dayIndex + 1);
+			if (world.provider.dimensionId == 0) {
+				int until = daysToGloom(dayIndex);
+				if (until == 0)
+					sb.append(" §c(Gloom)§f");
+				else
+					sb.append(" §7(").append(until).append(")§f");
+			}
+			sb.append(", ");
 			long minutes = second / 60, seconds = second % 60;
 			if (minutes < 10)
 				sb.append('0');
@@ -589,7 +690,7 @@ public class MinimapRenderer {
 			lastCoordX = x;
 			lastCoordY = y;
 			lastCoordZ = z;
-			cachedCoordStr = "x: " + x + ", z: " + z + ", y: " + y;
+			cachedCoordStr = x + ", " + y + ", " + z;
 			if (moved || lastBiome == null) {
 				BiomeGenBase biome = world.getBiomeGenForCoords(x, z);
 				if (biome != lastBiome || cachedBiomeName.isEmpty()) {

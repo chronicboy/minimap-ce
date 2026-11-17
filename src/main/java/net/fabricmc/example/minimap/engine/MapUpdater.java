@@ -209,7 +209,8 @@ public final class MapUpdater implements IWorldAccess {
 			int cz = (int) k;
 
 			Chunk chunk = world.getChunkFromChunkCoords(cx, cz);
-			if (chunk == null || chunk.isEmpty()) {
+			if (chunk == null || chunk.isEmpty() || !neighboursLoaded(cx, cz)) {
+				// Dropped for now; a neighbour arriving queues it again.
 				dirty.remove(key);
 				continue;
 			}
@@ -242,6 +243,23 @@ public final class MapUpdater implements IWorldAccess {
 			}
 		}
 		return sampled;
+	}
+
+	/**
+	 * The server sends the outermost ring of chunks before the world generator has decorated them:
+	 * no snow, ice, trees or flowers yet, because decoration needs the neighbours to exist. A chunk is
+	 * final once all eight neighbours exist, and the client only has chunks the server has, so this is
+	 * a safe test in singleplayer and multiplayer alike. Mapping earlier would freeze a bare strip
+	 * along the edge of the explored area.
+	 */
+	private boolean neighboursLoaded(int cx, int cz) {
+		for (int dz = -1; dz <= 1; dz++) {
+			for (int dx = -1; dx <= 1; dx++) {
+				if ((dx != 0 || dz != 0) && world.getChunkFromChunkCoords(cx + dx, cz + dz).isEmpty())
+					return false;
+			}
+		}
+		return true;
 	}
 
 	/** Drops queued chunks that are far outside any sensible view distance. */
@@ -283,12 +301,14 @@ public final class MapUpdater implements IWorldAccess {
 				mark(cx, cz, CHUNK_LOAD_DELAY_TICKS);
 		}
 		if (cx0 == cx1 && cz0 == cz1 && maxX - minX >= 15 && maxZ - minZ >= 15 && maxY - minY >= 255) {
-			// A whole chunk arrived: biome colours blend across chunk borders, so the four neighbours'
-			// edges change too. (Unchanged results cost a comparison and nothing else.)
-			mark(cx0 + 1, cz0, NEIGHBOUR_DELAY_TICKS);
-			mark(cx0 - 1, cz0, NEIGHBOUR_DELAY_TICKS);
-			mark(cx0, cz0 + 1, NEIGHBOUR_DELAY_TICKS);
-			mark(cx0, cz0 - 1, NEIGHBOUR_DELAY_TICKS);
+			// A whole chunk arrived: the neighbours may now be complete (see neighboursLoaded), and biome
+			// colours blend across chunk borders. (Unchanged results cost a comparison and nothing else.)
+			for (int dz = -1; dz <= 1; dz++) {
+				for (int dx = -1; dx <= 1; dx++) {
+					if (dx != 0 || dz != 0)
+						mark(cx0 + dx, cz0 + dz, NEIGHBOUR_DELAY_TICKS);
+				}
+			}
 		}
 	}
 

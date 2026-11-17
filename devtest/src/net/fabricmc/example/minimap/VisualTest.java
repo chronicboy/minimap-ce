@@ -101,6 +101,11 @@ public class VisualTest {
         BufferedImage crop = new BufferedImage(cw * z, ch * z, BufferedImage.TYPE_INT_RGB);
         for (int y = 0; y < ch * z; y++) for (int x = 0; x < cw * z; x++) crop.setRGB(x, y, img.getRGB(70 + x / z, 60 + y / z));
         ImageIO.write(crop, "png", new File(f.getParentFile(), "crop.png"));
+        // 3x crop of the turned square map (frame, compass badges, unexplored corners)
+        int c2 = 300, z2 = 3;
+        BufferedImage crop2 = new BufferedImage(c2 * z2, c2 * z2, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < c2 * z2; y++) for (int x = 0; x < c2 * z2; x++) crop2.setRGB(x, y, img.getRGB(300 + x / z2, 300 + y / z2));
+        ImageIO.write(crop2, "png", new File(f.getParentFile(), "crop-square.png"));
         System.out.println("wrote " + f);
     }
 
@@ -150,7 +155,7 @@ public class VisualTest {
             minimap(310, 10, 128, true, 4.3, -3.7, 1, 135f, true);          // circle, 1/2x, rotating, grid
             minimap(10, 160, 128, false, 500.0, 20.0, 0, 300f, true);       // square, rotating, grid, at a region border
             cfg.showChunkGrid = false;
-            minimap(160, 160, 128, true, -560.0, 150.0, 2, 90f, false);     // circle, 1/4x, near the unexplored edge
+            minimap(160, 160, 128, false, -560.0, 150.0, 2, 135f, true);    // square turned 45 degrees, 1/4x, corners unexplored
             cfg.mapOpacity = 0.55f;
             minimap(310, 160, 128, true, 4.3, -3.7, -2, 10f, false);        // 4x, translucent
             storage.tick();

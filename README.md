@@ -9,7 +9,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Texture-sampled block colors** — reads Minecraft's terrain atlas for accurate colors per block variant, and follows your resource pack.
 - **Topographic shading** — slope-based lighting for terrain depth, with water that darkens as it gets deeper.
 - **Biome tinting** for grass, leaves, vines and water, blended smoothly across biome borders like the game itself does.
-- **Circular or square map** with a beveled frame and compass labels (N/E/S/W).
+- **Circular or square map** with a lit metal frame, a soft inner shadow and compass badges (north in red). Unexplored ground is faintly hatched, so it never looks like a hole in the map.
 - **North-up or rotating** — optionally keep the way you are facing at the top.
 - **Zoom** — five levels from 4x to 1/4x.
 - **Adjustable size, corner and opacity.**
@@ -49,8 +49,8 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
 
 ### Info HUD
-- **Clock** — day number, day or night, and minutes:seconds into the current day.
-- **Coordinates** — the block you are standing on, as x, z, y.
+- **Clock** — day number, day or night, minutes:seconds into the current day, and in brackets the days until the next gloom night (BTW's pitch-black new moon: days 5, 13, 21, ...). It says (Gloom) on the day itself.
+- **Coordinates** — the block you are standing on, as plain numbers in x, y, z order like Xaero's.
 - **Biome** name.
 - Each can be turned off, and the text shrinks to match small minimaps.
 
