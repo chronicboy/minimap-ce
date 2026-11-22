@@ -1,6 +1,7 @@
 package net.fabricmc.example.minimap;
 
 import net.minecraft.src.Tessellator;
+import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -8,10 +9,11 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * A mob icon drawn from a few of the mob's model boxes, seen from a three-quarter
- * angle and slightly above, for mobs whose face is not one flat rectangle of the
- * skin (a horse's eyes are on the sides of a long head). Each box is textured
- * exactly the way the game's ModelBox maps the skin, so it follows resource packs.
+ * A mob icon drawn from a few of the mob's model boxes, for mobs whose face is not
+ * one flat rectangle of the skin: seen straight on ({@link #front}) for snouts, beaks,
+ * noses and horns, or turned and tilted for a horse, whose eyes are on the sides of a
+ * long head. Each box is textured exactly the way the game's ModelBox maps the skin,
+ * so it follows resource packs.
  *
  * The projection is worked out once when the icon is built: drawing is a handful
  * of textured quads, far to near, plus a dark silhouette outline.
@@ -39,6 +41,19 @@ final class ModelIcon {
 	 *                  head's origin)
 	 */
 	ModelIcon(int texW, int texH, double tilt, double yaw, double pitch, double[]... boxes) {
+		this(texW, texH, tilt, yaw, pitch, true, boxes);
+	}
+
+	/**
+	 * The head seen straight from the front, like a flat face but with whatever sticks out of it
+	 * (snouts, beaks, noses, horns, ears, a hat brim) drawn over it at its real place. Every edge
+	 * stays on the texel grid, so it is as crisp as a flat face. No shading: all faces point at you.
+	 */
+	static ModelIcon front(int texW, int texH, double[]... boxes) {
+		return new ModelIcon(texW, texH, 0.0, 0.0, 0.0, false, boxes);
+	}
+
+	private ModelIcon(int texW, int texH, double tilt, double yaw, double pitch, boolean lit, double[]... boxes) {
 		List<Face> visible = new ArrayList<Face>();
 		double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
 		// Direction towards the light in view space (x right, y down, z away): from the upper left front.
@@ -97,7 +112,7 @@ final class ModelIcon {
 					minY = Math.min(minY, f.y[i]);
 					maxY = Math.max(maxY, f.y[i]);
 				}
-				f.light = (float) (0.55 + 0.45 * Math.max(0.0, nx * lx + ny * ly + nz * lz));
+				f.light = lit ? (float) (0.55 + 0.45 * Math.max(0.0, nx * lx + ny * ly + nz * lz)) : 1.0f;
 				f.depth = fz;
 				visible.add(f);
 			}
@@ -168,7 +183,7 @@ final class ModelIcon {
 	 * @param pixel one physical pixel in GUI units
 	 */
 	void draw(Tessellator t, double left, double top, double scale, float shade, double pixel) {
-		t.startDrawingQuads();
+		t.startDrawing(GL11.GL_TRIANGLES);
 		t.setColorRGBA_F(0.02f, 0.02f, 0.03f, 1.0f);
 		for (int dy = -1; dy <= 1; dy++) {
 			for (int dx = -1; dx <= 1; dx++) {
@@ -188,9 +203,11 @@ final class ModelIcon {
 	}
 
 	private static void quad(Tessellator t, Face f, double left, double top, double scale) {
-		// Tessellator quads in 1.6.4 take corners in order; ModelBox's order is already a proper loop.
-		for (int i = 0; i < 4; i++)
-			t.addVertexWithUV(left + f.x[i] * scale, top + f.y[i] * scale, 0.0, f.u[i], f.v[i]);
+		// ModelBox's corner order is already a proper loop; clipped to the minimap when it is set.
+		double[] x = f.x, y = f.y, u = f.u, v = f.v;
+		IconClip.quad(t, left + x[0] * scale, top + y[0] * scale, u[0], v[0], left + x[1] * scale, top + y[1] * scale,
+				u[1], v[1], left + x[2] * scale, top + y[2] * scale, u[2], v[2], left + x[3] * scale,
+				top + y[3] * scale, u[3], v[3]);
 	}
 
 	/** For tests: number of faces drawn. */

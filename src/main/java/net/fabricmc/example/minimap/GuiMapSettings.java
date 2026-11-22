@@ -45,6 +45,7 @@ public class GuiMapSettings extends GuiScreen {
 	private static final int BTN_WAYPOINT_ICONS = 18;
 	private static final int BTN_CAVE = 19;
 	private static final int BTN_SHARP = 20;
+	private static final int BTN_WORLD_LABELS = 21;
 	private static final int BTN_DONE = 99;
 	private static final int BTN_TAB_FIRST = 200;
 
@@ -210,6 +211,8 @@ public class GuiMapSettings extends GuiScreen {
 			add(BTN_COORDINATES, right, y, "Your block position (x, z, y) under the minimap.");
 			y += rowStep;
 			add(BTN_BIOME, left, y, "Name of the biome you are standing in, with (Caves) while the cave view is on.");
+			add(BTN_WORLD_LABELS, right, y, "Waypoints in the world: Icons shows each one's tile and distance, and "
+					+ "its name while you look towards it. Full always shows the name. Beams Only hides the labels.");
 		} else {
 			add(BTN_PAUSE_GAME, left, y,
 					"Whether the fullscreen map pauses a singleplayer game. Turn off to watch it while travelling.");
@@ -285,6 +288,8 @@ public class GuiMapSettings extends GuiScreen {
 				return "Map Pauses Game";
 			case BTN_SHARP:
 				return "Map Pixels";
+			case BTN_WORLD_LABELS:
+				return "In World";
 			default:
 				return "";
 		}
@@ -333,6 +338,10 @@ public class GuiMapSettings extends GuiScreen {
 				return onOff(cfg.fullscreenMapPausesGame);
 			case BTN_SHARP:
 				return cfg.sharpScaling ? "Sharp" : "Nearest";
+			case BTN_WORLD_LABELS: {
+				String[] styles = { "Icons", "Full", "Beams Only" };
+				return styles[Math.max(0, Math.min(2, cfg.worldWaypointLabels))];
+			}
 			default:
 				return "";
 		}
@@ -419,6 +428,9 @@ public class GuiMapSettings extends GuiScreen {
 				break;
 			case BTN_SHARP:
 				cfg.sharpScaling = !cfg.sharpScaling;
+				break;
+			case BTN_WORLD_LABELS:
+				cfg.worldWaypointLabels = (cfg.worldWaypointLabels + (back ? 2 : 1)) % 3;
 				break;
 			case BTN_DONE:
 				close();

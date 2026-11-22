@@ -11,7 +11,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Biome tinting** for grass, leaves, vines and water, blended smoothly across biome borders like the game itself does.
 - **Circular or square map** with a lit metal frame, a soft inner shadow, and compass letters just inside the edge like Xaero's. You are a minimal white arrow with a thin outline. Unexplored ground is faintly hatched, so it never looks like a hole in the map.
 - **North-up or rotating** — optionally keep the way you are facing at the top.
-- **Zoom** — five levels from 4x to 1/4x.
+- **Zoom** — five levels from 4x to 1/4x, with a smooth zoom animation between them.
 - **Adjustable size, corner and opacity.**
 - **Chunk grid overlay** (toggleable).
 - **Crisp at every zoom** — blocks line up with screen pixels; in-between zooms and the rotating map keep blocks solid with clean edges.
@@ -25,6 +25,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Underground layers** — caves you explore are saved in 16-block height layers. Underground, the map opens on your layer; the panel at the top right (or PgUp/PgDn) moves between the surface and every explored layer.
 - **Cross-dimension viewing** — browse the Overworld, Nether and End maps from tabs without travelling there.
 - **Right-click menu** — create, edit, hide or delete waypoints, teleport, or re-center on yourself.
+- **Export as a picture** — the Export button (or the right-click menu) saves the map you are looking at, including cave layers and other dimensions, as a PNG in your `screenshots` folder: one pixel per block, seamless, with unexplored ground transparent. Very large maps are saved at 1/2, 1/4, ... scale so the picture stays a manageable size.
 - **Cursor readout** — coordinates and ground height under the mouse, plus a distance ruler in the corner.
 - **Unpaused journeys** — optionally leave the game running while the map is open.
 
@@ -37,13 +38,14 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Cross-dimension waypoint list** — manage waypoints for any dimension from the waypoint screen.
 - **Death waypoints** — saved automatically and numbered (Death, Death 2, ...).
 - **Spawn point** — tracked per world, with its own toggle.
-- **In-world beacons** — translucent beams with an icon, and a name and distance label when you look at them.
+- **In the world** — a translucent beam, and a crisp waypoint tile with the distance under it that stays the same size however far away it is (like Xaero's). Look towards one and its name appears. Settings > Markers & Info > In World switches to names on every label, or beams only.
 - **Teleport** to a waypoint or any explored spot on the map. This sends a chat command, so it needs cheats or operator rights; the command can be changed (see Configuration).
 - **Per-world saving** — separate lists for every singleplayer world and multiplayer server.
 
 ### Entity Radar
 - **Dots, faces on Tab** — like Xaero's: nearby mobs are small color-coded dots (red hostile, green passive animals and villagers, blue players, yellow anything else), and holding the player list key (Tab) shows each one's face.
-- **Mob faces** — cut from the mob's own skin, so they follow resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one. Horses, donkeys and mules, whose eyes are on the sides of a long head, are drawn from their 3D model instead: a face looking at you with its ears up.
+- **Mob faces** — taken from the mob's own skin, so they follow resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one. Mobs with something sticking out of their face are built from their 3D model, seen straight on and still pixel-sharp: pig snouts, cow and mooshroom horns, chicken beaks and wattles, wolf and dire wolf ears and snouts, ocelot ears, villager, witch, zombie villager and iron golem noses, and the witch's hat brim. Horses, donkeys and mules, whose eyes are on the sides of a long head, are drawn as a face looking at you with its ears up.
+- **Tidy crowds** — identical faces piled on top of each other (a pen of animals, a mob farm, a crowd zoomed out) are drawn once with a small count. Faces at the edge slide out of view under the frame instead of popping.
 - **Depth at a glance** — mobs well above or below you are drawn darker.
 - **Other styles** — always faces, arrows that point where each mob is looking, or plain dots.
 - Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
@@ -87,7 +89,7 @@ On the full-screen map:
 Press `O` in game. The minimap stays visible behind the screen and updates as you change things; hover an option for an explanation.
 
 - **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding, cave mode.
-- **Markers & Info** — entity radar and its icon style (Dots + Tab Faces, Faces, Arrows or Dots), waypoints and their icon style, chunk grid, compass, clock, coordinates, biome.
+- **Markers & Info** — entity radar and its icon style (Dots + Tab Faces, Faces, Arrows or Dots), waypoints and their icon style, chunk grid, compass, clock, coordinates, biome, and how waypoints are labelled in the world (Icons, Full or Beams Only).
 - **World Map** — whether the full-screen map pauses the game, whether teleport options are shown, and map pixel scaling (Sharp, or Nearest if your graphics driver has trouble with Sharp).
 
 ## Configuration

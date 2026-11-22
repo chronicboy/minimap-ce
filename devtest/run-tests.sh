@@ -11,6 +11,9 @@
 #   visual   renders the real minimap code to a PNG you can look at
 #   heads    cuts every mob face out of the game's skins with the radar's table
 #   icons    draws the model-based horse icons from the game's textures (GPU)
+#   faces    straight-on model icons (snouts, beaks, noses, horns) and clipping to the round minimap (GPU)
+#   labels   where in-world waypoint labels land on the HUD, from a real camera setup (GPU)
+#   export   map export to PNG: region files + unsaved chunks, checked pixel by pixel, and scaled down
 #   screens  renders every Minimap CE screen with the game's real font (needs run/config/mcpatcher.conf,
 #            which the first runClient creates)
 set -e
@@ -46,7 +49,9 @@ for f in "$LANG3" "$CIO" "$TYPESAFE" "$AW"; do [ -f "$f" ] && CP="$CP;$(win "$f"
 javac -nowarn -cp "$CP" -d "$OUT/classes" devtest/src/PureTest.java devtest/src/SamplerTest.java devtest/src/GLTest.java \
 	devtest/src/RealMapView.java devtest/src/net/fabricmc/example/minimap/VisualTest.java \
 	devtest/src/net/fabricmc/example/minimap/HeadSheet.java devtest/src/net/fabricmc/example/minimap/VisualTestTerrain.java devtest/src/net/fabricmc/example/minimap/GuiShots.java \
-	devtest/src/net/fabricmc/example/minimap/ModelIconTest.java 2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
+	devtest/src/net/fabricmc/example/minimap/ModelIconTest.java devtest/src/net/fabricmc/example/minimap/FrontIconTest.java \
+	devtest/src/net/fabricmc/example/minimap/WaypointLabelTest.java devtest/src/net/fabricmc/example/minimap/engine/ExportTest.java \
+	2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
 CP="$CP;$(win "$PWD/$OUT/classes")"
 LIB="-Djava.library.path=$(win "$PWD/$OUT/natives")"
 
@@ -57,11 +62,15 @@ echo "== gl";      java "$LIB" -cp "$CP" GLTest "$(win "$PWD/$RUN/gl")" || statu
 echo "== visual";  java "$LIB" -cp "$CP" net.fabricmc.example.minimap.VisualTest "$(win "$PWD/$RUN/visual")" || status=1
 echo "== heads";   java -cp "$CP" net.fabricmc.example.minimap.HeadSheet "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/heads.png")" || status=1
 echo "== icons";   java "$LIB" -cp "$CP" net.fabricmc.example.minimap.ModelIconTest "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/model-icons.png")" || status=1
+echo "== faces";   java "$LIB" -cp "$CP" net.fabricmc.example.minimap.FrontIconTest "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/front-icons.png")" || status=1
+echo "== labels";  java "$LIB" -cp "$CP" net.fabricmc.example.minimap.WaypointLabelTest || status=1
+echo "== export";  java -cp "$CP" net.fabricmc.example.minimap.engine.ExportTest "$(win "$PWD/$RUN/visual")" || status=1
 if [ -f run/config/mcpatcher.conf ]; then
 	echo "== screens"
 	mkdir -p "$RUN/screens/game/config"
 	cp run/config/mcpatcher.conf "$RUN/screens/game/config/"
-	java "$LIB" -cp "$CP" net.fabricmc.example.minimap.GuiShots "$(win "$PWD/$RUN/screens")" | grep -v "^\[\|INFO\|WARNING\|Launcher profile\|^$" || status=1
+	java "$LIB" -cp "$CP" net.fabricmc.example.minimap.GuiShots "$(win "$PWD/$RUN/screens")" 2>&1 | grep -v "^\[\|INFO\|WARNING\|Launcher profile\|^$"
+	[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "SCREENS FAILED"; status=1; }
 else
 	echo "== screens: skipped (run the game once with runClient so run/config/mcpatcher.conf exists)"
 fi

@@ -2,6 +2,7 @@ package net.fabricmc.example.mixin;
 
 import net.fabricmc.example.BTWNavigator;
 import net.fabricmc.example.minimap.GuiFullscreenMap;
+import net.fabricmc.example.minimap.WaypointBeamRenderer;
 import net.fabricmc.example.minimap.engine.MapEngine;
 import net.minecraft.src.GuiIngame;
 import net.minecraft.src.Minecraft;
@@ -36,10 +37,22 @@ public class GuiIngameMixin {
 			// Map upkeep runs every frame, whether or not the minimap itself is visible.
 			MapEngine.INSTANCE.frame(mc);
 
+			ScaledResolution sr = new ScaledResolution(mc.gameSettings, mc.displayWidth, mc.displayHeight);
+			boolean fullscreenMap = mc.currentScreen instanceof GuiFullscreenMap;
+			// Waypoint labels in the world, under the minimap.
+			if (!fullscreenMap) {
+				try {
+					WaypointBeamRenderer.renderHud(mc, sr.getScaledWidth(), sr.getScaledHeight(), sr.getScaleFactor());
+				} catch (Throwable t) {
+					try {
+						Tessellator.instance.draw();
+					} catch (Throwable ignored) {
+					}
+				}
+			}
 			// Hidden behind the F3 overlay and the fullscreen map.
-			if (mc.gameSettings.debugScreenState == 0 && !(mc.currentScreen instanceof GuiFullscreenMap)
-					&& mc.theWorld.getWorldInfo() != null && mc.theWorld.provider != null) {
-				ScaledResolution sr = new ScaledResolution(mc.gameSettings, mc.displayWidth, mc.displayHeight);
+			if (mc.gameSettings.debugScreenState == 0 && !fullscreenMap && mc.theWorld.getWorldInfo() != null
+					&& mc.theWorld.provider != null) {
 				BTWNavigator.minimapRenderer.renderMinimap(mc, mc.theWorld, mc.thePlayer, sr.getScaledWidth(),
 						sr.getScaledHeight(), sr.getScaleFactor(), partialTicks);
 			}

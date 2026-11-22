@@ -677,6 +677,24 @@ public final class MapStorage {
 		return closed;
 	}
 
+	/**
+	 * Everything an export needs, taken now on the main thread: which regions exist, the data of the
+	 * ones in memory (including changes not saved yet), and where the rest are on disk.
+	 */
+	MapExport.Source exportSource() {
+		HashSet<Long> keys = new HashSet<Long>(onDisk);
+		keys.addAll(legacyOnDisk);
+		HashMap<Long, int[][]> memory = new HashMap<Long, int[][]>();
+		for (MapRegion r : regions.values()) {
+			if (r.state == MapRegion.READY && r.chunks != null && r.hasData) {
+				// Chunk arrays are never changed once stored, so a shallow copy is a stable snapshot.
+				memory.put(r.key, r.chunks.clone());
+				keys.add(r.key);
+			}
+		}
+		return new MapExport.Source(new ArrayList<Long>(keys), memory, dir, legacyDir);
+	}
+
 	public int loadedRegionCount() {
 		return regions.size();
 	}

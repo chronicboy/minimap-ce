@@ -8,6 +8,7 @@ import net.fabricmc.example.minimap.SpawnTracker;
 import net.fabricmc.example.minimap.Waypoint;
 import net.fabricmc.example.minimap.WaypointManager;
 import net.fabricmc.example.minimap.engine.MapEngine;
+import net.fabricmc.example.minimap.engine.MapExport;
 import net.minecraft.src.GuiGameOver;
 import net.minecraft.src.Minecraft;
 import net.minecraft.src.World;
@@ -46,6 +47,13 @@ public class MinecraftMixin {
 				System.err.println("[Minimap CE] Map engine tick failed:");
 				t.printStackTrace();
 			}
+		}
+
+		// Map export finished: tell the player where the picture is.
+		String exportMessage;
+		while ((exportMessage = MapExport.pollMessage()) != null) {
+			if (mc.ingameGUI != null)
+				mc.ingameGUI.getChatGUI().printChatMessage("§7[Minimap]§r " + exportMessage);
 		}
 
 		if (mc.theWorld != null && mc.thePlayer != null) {

@@ -67,6 +67,7 @@ public class GuiShots {
                     if (r == int.class) return 0;
                     if (r == long.class) return 0L;
                     if (r == String.class) return "devtest";
+                    if (r == net.fabricmc.api.EnvType.class) return net.fabricmc.api.EnvType.CLIENT;
                     return null;
                 });
         Field launcherField = launcherBase.getDeclaredField("launcher");
@@ -177,9 +178,138 @@ public class GuiShots {
                 shoot(new GuiMapSettings(null), size, new File(out, "settings" + page + "-" + tag + ".png"), -1, -1, null);
             }
         }
+        // ---- the in-game HUD: minimap with mob faces (a pen of pigs, cows at the edge) and waypoint labels
+        set(MapEngine.INSTANCE, MapEngine.class, "caveActive", Boolean.FALSE);
+        cfg.showEntities = true;
+        cfg.entityIconStyle = MapConfig.ENTITY_HEADS;
+        // Stand-in renderers that only name the plain skin (BTW's own pick skins by hunger, which a fake mob lacks).
+        Field mapField = RenderManager.class.getDeclaredField("entityRenderMap");
+        mapField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<Class<?>, Render> renderMap = (java.util.Map<Class<?>, Render>) mapField.get(RenderManager.instance);
+        renderMap.put(EntityPig.class, skin("textures/entity/pig/pig.png"));
+        renderMap.put(EntityCow.class, skin("textures/entity/cow/cow.png"));
+        renderMap.put(EntityChicken.class, skin("textures/entity/chicken.png"));
+        java.util.List<Object> entities = (java.util.List<Object>) world.loadedEntityList;
+        for (int i = 0; i < 9; i++) entities.add(mob(EntityPig.class, 52 + (i % 3) * 1.1, -20 + (i / 3) * 1.2, 41)); // a pen
+        entities.add(mob(EntityPig.class, 62, -2, 41));
+        entities.add(mob(EntityCow.class, 40.3 + 61, -12.6, 41));      // on the east edge
+        entities.add(mob(EntityCow.class, 40.3, -12.6 - 63.5, 41));    // on the north edge
+        entities.add(mob(EntityCow.class, 40.3 - 30, -12.6 + 24, 41));
+        entities.add(mob(EntityChicken.class, 30, -30, 41));
+        entities.add(mob(EntityChicken.class, 31, -29.5, 41));
+        entities.add(mob(EntityChicken.class, 22, -6, 60));            // far above: darker
+        // MCPatcher's random mob skins look at the biome under the mob: give the stand-in world plains chunks.
+        final Chunk plains = new Chunk(world, 0, 0);
+        Arrays.fill(plains.getBiomeArray(), (byte) BiomeGenBase.plains.biomeID);
+        IChunkProvider chunks = (IChunkProvider) java.lang.reflect.Proxy.newProxyInstance(GuiShots.class.getClassLoader(),
+                new Class<?>[] { IChunkProvider.class }, (proxy, method, margs) -> {
+                    Class<?> r = method.getReturnType();
+                    if (r == Chunk.class) return plains;
+                    if (r == boolean.class) return method.getName().equals("chunkExists");
+                    if (r == int.class) return 0;
+                    if (r == String.class) return "devtest";
+                    return null;
+                });
+        set(world, World.class, "chunkProvider", chunks);
+        Entity probe = (Entity) entities.get(0);
+        try {
+            Render r = RenderManager.instance.getEntityRenderObject(probe);
+            ResourceLocation base = r.getEntityTexture(probe);
+            System.out.println("radar skin for a pig: " + base + " -> "
+                    + com.prupe.mcpatcher.mob.MobRandomizer.randomTexture((EntityLivingBase) probe, base));
+        } catch (Throwable t) {
+            System.out.println("radar skin lookup failed: " + t);
+            t.printStackTrace(System.out);
+        }
+        for (int[] size : new int[][] { { 1280, 720, 2 }, { 1280, 720, 3 } }) {
+            gs.guiScale = size[2];
+            mc.displayWidth = size[0];
+            mc.displayHeight = size[1];
+            // The second shot shows names on every label (the "Full" setting).
+            cfg.worldWaypointLabels = size[2] == 3 ? MapConfig.WORLD_LABELS_FULL : MapConfig.WORLD_LABELS_ICONS;
+            hudShot(size, new File(out, "hud-" + size[0] + "x" + size[1] + "s" + size[2] + ".png"), world, player);
+        }
+
         System.out.println("GL error: " + GL11.glGetError());
         pb.destroy();
         System.exit(0);
+    }
+
+    static Render skin(final String path) {
+        final ResourceLocation texture = new ResourceLocation(path);
+        return new Render() {
+            @Override
+            public void doRender(Entity e, double x, double y, double z, float yaw, float partialTicks) {
+            }
+
+            @Override
+            public ResourceLocation getEntityTexture(Entity e) {
+                return texture;
+            }
+        };
+    }
+
+    static Entity mob(Class<? extends Entity> type, double x, double z, double y) throws Exception {
+        Entity e = alloc(type);
+        e.posX = e.prevPosX = x;
+        e.posZ = e.prevPosZ = z;
+        e.posY = e.prevPosY = y;
+        DataWatcher dw = new DataWatcher();
+        dw.addObject(0, Byte.valueOf((byte) 0));
+        set(e, Entity.class, "dataWatcher", dw);
+        return e;
+    }
+
+    /** The world behind (sky, grass), waypoint labels from a real perspective camera, then the minimap. */
+    static void hudShot(int[] size, File file, World world, EntityPlayer player) throws Exception {
+        int W = size[0], H = size[1];
+        ScaledResolution sr = new ScaledResolution(mc.gameSettings, W, H);
+        int gw = sr.getScaledWidth(), gh = sr.getScaledHeight();
+        MinimapRenderer renderer = new MinimapRenderer();
+        for (int frame = 0; frame < 8; frame++) {
+            GL11.glViewport(0, 0, W, H);
+            GL11.glClearColor(0.42f, 0.58f, 0.80f, 1f);
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+            // The camera of the world pass: the player's eyes, looking along their yaw, a little up.
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glLoadIdentity();
+            double near = 0.05, top = near * Math.tan(Math.toRadians(70) / 2), right = top * W / H;
+            GL11.glFrustum(-right, right, -top, top, near, 512);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glLoadIdentity();
+            GL11.glRotatef(-12f, 1, 0, 0);
+            GL11.glRotatef(player.rotationYaw + 180f, 0, 1, 0);
+            set(null, WaypointBeamRenderer.class, "camX", player.posX);
+            set(null, WaypointBeamRenderer.class, "camY", player.posY + 1.62);
+            set(null, WaypointBeamRenderer.class, "camZ", player.posZ);
+            WaypointBeamRenderer.captureCamera();
+
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, sr.getScaledWidth_double(), sr.getScaledHeight_double(), 0.0D, 1000.0D, 3000.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glLoadIdentity();
+            GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+            Gui.drawRect(0, gh * 3 / 5, gw, gh, 0xFF4F7A33);
+            GL11.glEnable(GL11.GL_ALPHA_TEST);
+            GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
+            GL11.glShadeModel(GL11.GL_FLAT);
+            MapEngine.INSTANCE.storage().beginFrame();
+            WaypointBeamRenderer.renderHud(mc, gw, gh, sr.getScaleFactor());
+            renderer.renderMinimap(mc, world, player, gw, gh, sr.getScaleFactor(), 1.0f);
+            MapIO.flush(500);
+            MapEngine.INSTANCE.storage().tick();
+        }
+        GL11.glFinish();
+        IntBuffer buf = BufferUtils.createIntBuffer(W * H);
+        GL11.glReadPixels(0, 0, W, H, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
+        int[] row = new int[W];
+        for (int y = 0; y < H; y++) { buf.position((H - 1 - y) * W); buf.get(row); img.setRGB(0, y, W, 1, row, 0, W); }
+        ImageIO.write(img, "png", file);
+        int err = GL11.glGetError();
+        System.out.println("wrote " + file.getName() + (err != 0 ? "  GL ERROR " + err : ""));
     }
 
     static void shoot(GuiScreen screen, int[] size, File file, int mouseX, int mouseY, GuiFullscreenMap openMenuOn) throws Exception {

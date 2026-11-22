@@ -30,6 +30,13 @@ public class MapConfig {
 	public static final int WAYPOINT_LETTERS = 0;
 	public static final int WAYPOINT_SQUARES = 1;
 
+	/** In the world: icon and distance, the name when you look towards it. */
+	public static final int WORLD_LABELS_ICONS = 0;
+	/** In the world: icon, name and distance at all times. */
+	public static final int WORLD_LABELS_FULL = 1;
+	/** In the world: only the beams. */
+	public static final int WORLD_LABELS_OFF = 2;
+
 	public boolean minimapEnabled = true;
 	public int minimapSize = 128;
 	public int minimapPosition = 1; // 0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right
@@ -45,6 +52,8 @@ public class MapConfig {
 	public int entityIconStyle = ENTITY_DOTS_FACES_ON_TAB;
 	/** Waypoint style: coloured tile with the name's initial, or the small 3.x square. */
 	public int waypointIconStyle = WAYPOINT_LETTERS;
+	/** How waypoints are labelled in the world (see WORLD_LABELS_*). */
+	public int worldWaypointLabels = WORLD_LABELS_ICONS;
 	public int zoomLevel = 0;
 	public boolean showChunkGrid = false;
 	public boolean showCompass = true;
@@ -132,6 +141,7 @@ public class MapConfig {
 		// Stored under a new name: the previous builds' "entityIconStyle" predates the Tab default.
 		entityIconStyle = clamp(getInt(props, "radarIcons", entityIconStyle), 0, 3);
 		waypointIconStyle = clamp(getInt(props, "waypointIconStyle", waypointIconStyle), 0, 1);
+		worldWaypointLabels = clamp(getInt(props, "worldWaypointLabels", worldWaypointLabels), 0, 2);
 		zoomLevel = clamp(getInt(props, "zoomLevel", zoomLevel), MIN_ZOOM, MAX_ZOOM);
 		showChunkGrid = getBool(props, "showChunkGrid", showChunkGrid);
 		showCompass = getBool(props, "showCompass", showCompass);
@@ -193,6 +203,7 @@ public class MapConfig {
 		props.setProperty("showEntities", String.valueOf(showEntities));
 		props.setProperty("radarIcons", String.valueOf(entityIconStyle));
 		props.setProperty("waypointIconStyle", String.valueOf(waypointIconStyle));
+		props.setProperty("worldWaypointLabels", String.valueOf(worldWaypointLabels));
 		props.setProperty("zoomLevel", String.valueOf(zoomLevel));
 		props.setProperty("showChunkGrid", String.valueOf(showChunkGrid));
 		props.setProperty("showCompass", String.valueOf(showCompass));

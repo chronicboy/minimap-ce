@@ -73,6 +73,20 @@ public class MinimapRenderer {
 	private static final int SETTLE_FRAMES = 3;
 	private int iconGeneration = -1;
 
+	// Smooth zoom
+	private static final double ZOOM_SPEED = 16.0;
+	private double shownScale = Double.NaN;
+	private long lastZoomNanos;
+
+	// Faces that land on top of an identical face are drawn once, with a count.
+	/** Faces closer than this fraction of their size are merged into one. */
+	private static final double GROUP_DISTANCE = 0.55;
+	private final double[] headCx = new double[MAX_ENTITIES];
+	private final double[] headCy = new double[MAX_ENTITIES];
+	private final double[] headW = new double[MAX_ENTITIES];
+	private final double[] headH = new double[MAX_ENTITIES];
+	private final int[] headGroup = new int[MAX_ENTITIES];
+
 	// HUD text cache
 	private String cachedClockStr = "";
 	private long lastClockSecond = Long.MIN_VALUE;
@@ -89,6 +103,27 @@ public class MinimapRenderer {
 			return style;
 		boolean tab = mc.gameSettings != null && mc.gameSettings.keyBindPlayerList.pressed;
 		return tab ? MapConfig.ENTITY_HEADS : MapConfig.ENTITY_DOTS;
+	}
+
+	/**
+	 * The zoom actually shown: it follows the configured zoom over about a fifth of a second, evenly
+	 * in log scale (each halving takes as long as the next), like the fullscreen map.
+	 */
+	private double animatedScale(double target) {
+		long now = System.nanoTime();
+		double dt = lastZoomNanos == 0 ? 0.0 : Math.min(0.25, (now - lastZoomNanos) / 1.0e9);
+		lastZoomNanos = now;
+		if (!(shownScale > 0) || dt <= 0.0) {
+			shownScale = target;
+			return target;
+		}
+		double ratio = target / shownScale;
+		if (Math.abs(Math.log(ratio)) < 0.004) {
+			shownScale = target;
+		} else {
+			shownScale *= Math.pow(ratio, 1.0 - Math.exp(-dt * ZOOM_SPEED));
+		}
+		return shownScale;
 	}
 
 	/** Mobs far above or below are drawn darker, so the radar shows depth at a glance. */
@@ -146,7 +181,8 @@ public class MinimapRenderer {
 		viewX = player.prevPosX + (player.posX - player.prevPosX) * partialTicks;
 		viewZ = player.prevPosZ + (player.posZ - player.prevPosZ) * partialTicks;
 		float yaw = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks;
-		viewScale = cfg.minimapScale();
+		viewScale = animatedScale(cfg.minimapScale());
+		boolean zooming = viewScale != cfg.minimapScale();
 		viewRotation = cfg.rotateMinimap ? Math.toRadians(180.0 - yaw) : 0.0;
 		viewCos = Math.cos(viewRotation);
 		viewSin = Math.sin(viewRotation);
@@ -163,7 +199,7 @@ public class MinimapRenderer {
 		lastRawZ = viewZ;
 		stillFrames = moved ? 0 : Math.min(stillFrames + 1, SETTLE_FRAMES);
 		boolean glide = shader && stillFrames < SETTLE_FRAMES && viewScale * pixelScale >= 0.999;
-		boolean aligned = viewRotation == 0.0 && !glide;
+		boolean aligned = viewRotation == 0.0 && !glide && !zooming;
 		if (aligned) {
 			// Land block edges exactly on screen pixels; markers use the same snapped view so nothing drifts.
 			viewX = MapDraw.snap(viewX, centerX, viewScale, pixelScale);
@@ -229,9 +265,10 @@ public class MinimapRenderer {
 		// Inner shadow: the map looks set into the frame rather than pasted on.
 		double r = radius;
 		ring(t, (r - 7.0) / r, 1.0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.30f * opacity);
-		drawFrame(t);
 
-		// ---- Markers: one batch for all flat shapes (entities first, so waypoints and the player stay on top)
+		// ---- Markers, bottom to top: mob dots and arrows, mob faces (both under the frame, so a mob
+		// at the edge slides out of view instead of popping), then waypoints and the player on top,
+		// so a crowd of mobs never hides where you are or where you are going.
 		letterCount = 0;
 		headCount = 0;
 		if (BlockColors.generation() != iconGeneration) {
@@ -239,16 +276,15 @@ public class MinimapRenderer {
 			iconGeneration = BlockColors.generation();
 			EntityIcons.clearCache();
 		}
-		// ---- Markers, bottom to top: mob dots and arrows, mob faces, then waypoints and the player,
-		// so a crowd of mobs never hides where you are or where you are going.
 		t.startDrawing(GL11.GL_TRIANGLES);
 		if (cfg.showEntities)
 			addEntityMarkers(t, world, player, partialTicks, radarStyle(mc));
 		t.draw();
 		if (headCount > 0)
 			drawHeads(mc, t);
-
 		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		drawFrame(t);
+
 		t.startDrawing(GL11.GL_TRIANGLES);
 		if (cfg.showSpawnWaypoint && SpawnTracker.instance.hasSpawn())
 			addSpawnMarker(t, world);
@@ -538,7 +574,10 @@ public class MinimapRenderer {
 			double ez = e.prevPosZ + (e.posZ - e.prevPosZ) * partialTicks;
 			double dx = projectX(ex, ez);
 			double dy = projectY(ex, ez);
-			if (!inside(dx, dy, style == MapConfig.ENTITY_HEADS ? 5.0 : 3.0))
+			// Faces are clipped to the map and may hang over the edge, under the frame; dots and
+			// arrows are drawn whole, so they stop where the frame still covers their outer part.
+			double margin = style == MapConfig.ENTITY_HEADS ? -4.0 : (style == MapConfig.ENTITY_ARROWS ? 2.5 : 1.0);
+			if (!inside(dx, dy, margin))
 				continue;
 			double x = centerX + dx, y = centerY + dy;
 			count++;
@@ -582,6 +621,10 @@ public class MinimapRenderer {
 					headIcon[headCount] = head;
 					headX[headCount] = left;
 					headY[headCount] = top;
+					headCx[headCount] = x;
+					headCy[headCount] = y;
+					headW[headCount] = w;
+					headH[headCount] = h;
 					headShade[headCount] = heightShade(e.posY - player.posY);
 					headDepth[headCount] = Math.abs(e.posY - player.posY);
 					headCount++;
@@ -593,34 +636,110 @@ public class MinimapRenderer {
 		}
 	}
 
-	/** Faces, farthest from your level first, each with its own outline so overlapping faces stay apart. */
+	/**
+	 * Faces, farthest from your level first, each with its own outline so overlapping faces stay apart.
+	 * Identical faces piled almost exactly on top of each other (a pen of animals, a mob farm, a crowd
+	 * at night zoomed out) are drawn once with a count, the one nearest your level standing for the rest.
+	 * Faces are clipped to the map: one at the edge disappears under the frame bit by bit.
+	 */
 	private void drawHeads(Minecraft mc, Tessellator t) {
 		for (int i = 0; i < headCount; i++)
 			headOrder[i] = i;
+		// Nearest to your level first (stable, so groups do not flicker between equal mobs).
 		for (int i = 1; i < headCount; i++) {
 			int k = headOrder[i], j = i - 1;
-			while (j >= 0 && headDepth[headOrder[j]] < headDepth[k]) {
+			while (j >= 0 && headDepth[headOrder[j]] > headDepth[k]) {
 				headOrder[j + 1] = headOrder[j];
 				j--;
 			}
 			headOrder[j + 1] = k;
 		}
+		// headGroup[i]: how many faces face i stands for (0 = merged into another).
+		for (int n = 0; n < headCount; n++) {
+			int i = headOrder[n];
+			headGroup[i] = 1;
+			for (int m = 0; m < n; m++) {
+				int k = headOrder[m];
+				if (headGroup[k] == 0 || headIcon[k] != headIcon[i] || !headTexture[k].equals(headTexture[i]))
+					continue;
+				double reach = GROUP_DISTANCE * Math.max(headW[k], headH[k]);
+				if (Math.abs(headCx[k] - headCx[i]) < reach && Math.abs(headCy[k] - headCy[i]) < reach) {
+					headGroup[k]++;
+					headGroup[i] = 0;
+					break;
+				}
+			}
+		}
+
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		IconClip.set(centerX, centerY, shapeX, shapeY, shapeN, radius, circle);
 		int previousProgram = smoothIcons ? SharpShader.begin() : 0;
+		boolean groups = false;
 		try {
-			for (int n = 0; n < headCount; n++) {
+			// Drawn far to near: the reverse of the order above.
+			for (int n = headCount - 1; n >= 0; n--) {
 				int i = headOrder[n];
+				if (headGroup[i] == 0)
+					continue;
+				groups |= headGroup[i] > 1;
 				EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i], headShade[i],
 						1.0 / pixelScale, smoothIcons);
 			}
 		} finally {
 			if (smoothIcons)
 				SharpShader.end(previousProgram);
+			IconClip.clear();
 			for (int i = 0; i < headCount; i++) {
 				headTexture[i] = null;
 				headIcon[i] = null;
 			}
 		}
+		if (groups)
+			drawGroupCounts(mc.fontRenderer, t);
+	}
+
+	/** Small count badges at the lower right of merged faces. */
+	private void drawGroupCounts(FontRenderer fr, Tessellator t) {
+		if (fr == null)
+			return;
+		// Half-size digits, rounded to whole physical pixels per font pixel so they stay crisp.
+		double s = Math.ceil(0.5 * pixelScale) / pixelScale;
+		double u = 1.0 / pixelScale;
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		t.startDrawing(GL11.GL_TRIANGLES);
+		for (int n = 0; n < headCount; n++) {
+			int i = headOrder[n];
+			if (headGroup[i] < 2 || !inside(headCx[i] - centerX, headCy[i] - centerY, 4.0))
+				continue;
+			String text = groupText(headGroup[i]);
+			double w = (fr.getStringWidth(text) - 1) * s, h = 7 * s;
+			double right = snapPx(headX[i] + headW[i] + 2.0), bottom = snapPx(headY[i] + headH[i] + 2.0);
+			MapMarkers.rect(t, right - w - 2 * u, bottom - h - 2 * u, right, bottom, 0.04f, 0.04f, 0.05f, 0.85f);
+		}
+		t.draw();
+		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		for (int n = 0; n < headCount; n++) {
+			int i = headOrder[n];
+			if (headGroup[i] < 2 || !inside(headCx[i] - centerX, headCy[i] - centerY, 4.0))
+				continue;
+			String text = groupText(headGroup[i]);
+			double w = (fr.getStringWidth(text) - 1) * s, h = 7 * s;
+			double right = snapPx(headX[i] + headW[i] + 2.0), bottom = snapPx(headY[i] + headH[i] + 2.0);
+			GL11.glPushMatrix();
+			GL11.glTranslated(right - w - u, bottom - h - u, 0.0);
+			GL11.glScaled(s, s, 1.0);
+			fr.drawString(text, 0, 0, 0xFFFFFF);
+			GL11.glPopMatrix();
+		}
+		GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	private static String groupText(int count) {
+		return count > 99 ? "99+" : String.valueOf(count);
+	}
+
+	private double snapPx(double v) {
+		return Math.rint(v * pixelScale) / pixelScale;
 	}
 
 	// ------------------------------------------------------------------- text
@@ -756,13 +875,16 @@ public class MinimapRenderer {
 		int x = (int) Math.floor(player.posX);
 		int y = (int) Math.floor(player.boundingBox.minY);
 		int z = (int) Math.floor(player.posZ);
-		if (x != lastCoordX || y != lastCoordY || z != lastCoordZ || cachedCoordStr.isEmpty()) {
+		if (!showBiome)
+			lastBiome = null; // looked up again the moment it is switched back on
+		if (x != lastCoordX || y != lastCoordY || z != lastCoordZ || cachedCoordStr.isEmpty()
+				|| (showBiome && lastBiome == null)) {
 			boolean moved = x != lastCoordX || z != lastCoordZ;
 			lastCoordX = x;
 			lastCoordY = y;
 			lastCoordZ = z;
 			cachedCoordStr = x + ", " + y + ", " + z;
-			if (moved || lastBiome == null) {
+			if (showBiome && (moved || lastBiome == null)) {
 				BiomeGenBase biome = world.getBiomeGenForCoords(x, z);
 				if (biome != lastBiome || cachedBiomeName.isEmpty()) {
 					lastBiome = biome;

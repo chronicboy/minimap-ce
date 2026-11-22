@@ -60,6 +60,8 @@ final class EntityIcons {
 		final int[][] parts;
 		/** Drawn from model boxes instead (null for flat faces). */
 		final ModelIcon model;
+		/** GUI pixels per model unit for a model icon, or 0 to scale it to {@link #modelIconSize}. */
+		final double modelUnit;
 
 		Head(float unitsWide, int w, int h, int[]... parts) {
 			this.unitsWide = unitsWide;
@@ -67,15 +69,22 @@ final class EntityIcons {
 			this.h = h;
 			this.parts = parts;
 			this.model = null;
+			this.modelUnit = 0;
 		}
 
-		/** An icon drawn from model boxes. */
+		/** An icon drawn from model boxes, scaled to {@link #modelIconSize}. */
 		Head(ModelIcon model) {
+			this(model, 0);
+		}
+
+		/** An icon drawn from model boxes at a fixed size per model unit. */
+		Head(ModelIcon model, double unit) {
 			this.unitsWide = 0;
 			this.w = 0;
 			this.h = 0;
 			this.parts = new int[0][];
 			this.model = model;
+			this.modelUnit = unit;
 		}
 
 		/** A single face rectangle of a 64-texel-wide skin. */
@@ -86,8 +95,25 @@ final class EntityIcons {
 
 	private static final Head NONE = new Head(0, 0, 0, 0);
 	private static final Head CUBE_HEAD = new Head(8, 8, 8, 8);
-	/** Zombie villagers share EntityZombie but wear a villager-shaped head lower in their skin. */
-	private static final Head ZOMBIE_VILLAGER = new Head(8, 40, 8, 10);
+	/**
+	 * A head seen straight from the front, built from the model's own boxes ({u, v, x, y, z, w, h, d,
+	 * rotX, rotZ}, as ModelRenderer.addBox with the texture offset), one GUI pixel per texel like the
+	 * flat faces. Used where something sticks out of the face: a snout, beak, nose, horns or ears.
+	 */
+	private static Head front(int texW, int texH, double[]... boxes) {
+		return new Head(ModelIcon.front(texW, texH, boxes), 1.0);
+	}
+
+	/** ModelWolf / BTW's DireWolfModel: head, ears and snout. */
+	private static final Head WOLF = front(64, 32, new double[] { 0, 0, -3, -3, -2, 6, 6, 4, 0, 0 },
+			new double[] { 16, 14, -3, -5, 0, 2, 2, 1, 0, 0 }, new double[] { 16, 14, 1, -5, 0, 2, 2, 1, 0, 0 },
+			new double[] { 0, 10, -1.5, 0, -5, 3, 3, 4, 0, 0 });
+	/** ModelVillager's head and nose (the nose's rotation point is 2 above the head's). */
+	private static final double[] VILLAGER_HEAD = { 0, 0, -4, -10, -4, 8, 10, 8, 0, 0 };
+	private static final double[] VILLAGER_NOSE = { 24, 0, -1, -3, -6, 2, 4, 2, 0, 0 };
+	/** Zombie villagers share EntityZombie but wear a villager-shaped head lower in their skin (ModelZombieVillager). */
+	private static final Head ZOMBIE_VILLAGER = front(64, 64, new double[] { 0, 32, -4, -10, -4, 8, 10, 8, 0, 0 },
+			new double[] { 24, 32, -1, -3, -6, 2, 4, 2, 0, 0 });
 
 	/** First match wins, so subclasses that need different treatment come before their parents. */
 	private static final Object[][] RULES = {
@@ -101,18 +127,31 @@ final class EntityIcons {
 			{ EntityEnderman.class, CUBE_HEAD },
 			{ EntityBlaze.class, CUBE_HEAD },
 			{ EntitySnowman.class, CUBE_HEAD },
-			{ EntityPig.class, CUBE_HEAD },
+			// ModelPig: the quadruped head plus the snout.
+			{ EntityPig.class, front(64, 32, new double[] { 0, 0, -4, -4, -8, 8, 8, 8, 0, 0 },
+					new double[] { 16, 16, -2, 0, -9, 4, 3, 1, 0, 0 }) },
 			{ EntitySpider.class, new Head(40, 12, 8, 8) }, // includes cave spiders
-			{ EntityCow.class, new Head(6, 6, 8, 8) }, // includes mooshrooms
+			// ModelCow: head and horns (includes mooshrooms).
+			{ EntityCow.class, front(64, 32, new double[] { 0, 0, -4, -4, -6, 8, 8, 6, 0, 0 },
+					new double[] { 22, 0, -5, -5, -4, 1, 3, 1, 0, 0 }, new double[] { 22, 0, 4, -5, -4, 1, 3, 1, 0, 0 }) },
 			{ EntitySheep.class, new Head(8, 8, 6, 6) },
-			{ EntityChicken.class, new Head(3, 3, 4, 6) },
-			{ EntityWolf.class, new Head(4, 4, 6, 6) },
-			{ EntityOcelot.class, new Head(5, 5, 5, 4) },
-			{ EntityVillager.class, new Head(8, 8, 8, 10) },
-			{ EntityWitch.class, new Head(8, 8, 8, 10) },
-			{ EntityIronGolem.class, new Head(128.0f, 8, 10, new int[] { 8, 8, 8, 10, 0, 0 }) },
+			// ModelChicken: head, beak and wattle.
+			{ EntityChicken.class, front(64, 32, new double[] { 0, 0, -2, -6, -2, 4, 6, 3, 0, 0 },
+					new double[] { 14, 0, -2, -4, -4, 4, 2, 2, 0, 0 }, new double[] { 14, 4, -1, -2, -3, 2, 2, 2, 0, 0 }) },
+			{ EntityWolf.class, WOLF },
+			// ModelOcelot: head, nose and ears.
+			{ EntityOcelot.class, front(64, 32, new double[] { 0, 0, -2.5, -2, -3, 5, 4, 5, 0, 0 },
+					new double[] { 0, 24, -1.5, 0, -4, 3, 2, 2, 0, 0 }, new double[] { 0, 10, -2, -3, 0, 1, 1, 2, 0, 0 },
+					new double[] { 6, 10, 1, -3, 0, 1, 1, 2, 0, 0 }) },
+			{ EntityVillager.class, front(64, 64, VILLAGER_HEAD, VILLAGER_NOSE) },
+			// ModelWitch: the villager head and nose under the brim of the hat.
+			{ EntityWitch.class, front(64, 128, VILLAGER_HEAD, VILLAGER_NOSE,
+					new double[] { 0, 64, -5, -10.03125, -5, 10, 2, 10, 0, 0 }) },
+			// ModelIronGolem: head and nose, 128 x 128 texture.
+			{ EntityIronGolem.class, front(128, 128, new double[] { 0, 0, -4, -12, -5.5, 8, 10, 8, 0, 0 },
+					new double[] { 24, 0, -1, -5, -7.5, 2, 4, 2, 0, 0 }) },
 			{ EntityGhast.class, new Head(16, 16, 16, 16) },
-			{ DireWolfEntity.class, new Head(4, 4, 6, 6) },
+			{ DireWolfEntity.class, WOLF },
 	};
 
 	private static Head horseHead;
@@ -274,7 +313,7 @@ final class EntityIcons {
 			double unitsHigh = head.unitsWide * texH / (double) texW;
 			double u = unit(head);
 			int[] base = head.parts[0];
-			t.startDrawingQuads();
+			t.startDrawing(GL11.GL_TRIANGLES);
 			// Outline: the base face stretched one pixel further each way and drawn dark.
 			t.setColorRGBA_F(0.02f, 0.02f, 0.03f, 1.0f);
 			addFace(t, left - pixel, top - pixel, left + head.w * u + pixel, top + head.h * u + pixel, base[0], base[1],
@@ -305,7 +344,10 @@ final class EntityIcons {
 	}
 
 	private static double modelScale(Head head) {
-		return modelIconSize / Math.max(head.model.width, head.model.height);
+		double largest = Math.max(head.model.width, head.model.height);
+		if (head.modelUnit > 0)
+			return largest * head.modelUnit <= 12.0 ? head.modelUnit : 12.0 / largest;
+		return modelIconSize / largest;
 	}
 
 	static double iconWidth(Head head) {
@@ -320,9 +362,6 @@ final class EntityIcons {
 			int th, double unitsWide, double unitsHigh) {
 		double u0 = tx / unitsWide, u1 = (tx + tw) / unitsWide;
 		double v0 = ty / unitsHigh, v1 = (ty + th) / unitsHigh;
-		t.addVertexWithUV(x0, y1, 0.0, u0, v1);
-		t.addVertexWithUV(x1, y1, 0.0, u1, v1);
-		t.addVertexWithUV(x1, y0, 0.0, u1, v0);
-		t.addVertexWithUV(x0, y0, 0.0, u0, v0);
+		IconClip.quad(t, x0, y1, u0, v1, x1, y1, u1, v1, x1, y0, u1, v0, x0, y0, u0, v0);
 	}
 }

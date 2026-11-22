@@ -3,6 +3,7 @@ package net.fabricmc.example.minimap;
 import net.fabricmc.example.minimap.engine.CaveLayers;
 import net.fabricmc.example.minimap.engine.MapDraw;
 import net.fabricmc.example.minimap.engine.MapEngine;
+import net.fabricmc.example.minimap.engine.MapExport;
 import net.fabricmc.example.minimap.engine.MapStorage;
 import net.minecraft.src.EntityPlayer;
 import net.minecraft.src.FontRenderer;
@@ -15,6 +16,7 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,6 +45,7 @@ public class GuiFullscreenMap extends GuiScreen {
 	private static final int ACTION_DELETE = 4;
 	private static final int ACTION_TELEPORT_WAYPOINT = 5;
 	private static final int ACTION_TOGGLE = 6;
+	private static final int ACTION_EXPORT = 7;
 
 	// View
 	private double centerX, centerZ;
@@ -121,14 +124,19 @@ public class GuiFullscreenMap extends GuiScreen {
 		// Toolbar: actions on the left, dimension tabs in the middle, close on the right.
 		boolean narrow = this.width < 420;
 		int btnH = 18, btnY = 4;
-		int wpW = narrow ? 60 : 72, setW = narrow ? 54 : 62, closeW = narrow ? 22 : 54;
+		// Export only where it fits beside the tabs; it is always in the right-click menu as well.
+		int wpW = narrow ? 60 : 72, setW = narrow ? 54 : 62, expW = narrow ? 0 : 54, closeW = narrow ? 22 : 54;
 		this.buttonList.add(new FlatButton(0, 4, btnY, wpW, btnH, "Waypoints"));
 		this.buttonList.add(new FlatButton(1, 4 + wpW + 4, btnY, setW, btnH, "Settings"));
+		if (expW > 0)
+			this.buttonList.add(new FlatButton(3, 4 + wpW + 4 + setW + 4, btnY, expW, btnH, "Export"));
+		else
+			expW = -4;
 		this.buttonList.add(new FlatButton(2, this.width - closeW - 4, btnY, closeW, btnH, narrow ? "X" : "Close"));
 		int tabsW = 0;
 		for (String name : DIM_NAMES)
 			tabsW += this.fontRenderer.getStringWidth(name) + 14 + 2;
-		int tabX = Math.max(4 + wpW + 4 + setW + 8, (this.width - tabsW) / 2);
+		int tabX = Math.max(4 + wpW + 4 + setW + 4 + expW + 8, (this.width - tabsW) / 2);
 		for (int i = 0; i < DIM_NAMES.length; i++) {
 			int w = this.fontRenderer.getStringWidth(DIM_NAMES[i]) + 14;
 			dimTabs[i] = new FlatButton(BTN_DIM_FIRST + i, tabX, btnY, w, btnH, DIM_NAMES[i]).style(MapUi.STYLE_TAB);
@@ -173,7 +181,28 @@ public class GuiFullscreenMap extends GuiScreen {
 			case 2:
 				this.mc.displayGuiScreen(null);
 				break;
+			case 3:
+				exportMap();
+				break;
 		}
+	}
+
+	/** Saves the map being viewed (this dimension, or the cave layer shown) as a PNG in screenshots/. */
+	private void exportMap() {
+		if (MapExport.isRunning())
+			return;
+		String world = MapEngine.INSTANCE.worldId();
+		int cut = world.lastIndexOf("_dim");
+		if (cut > 0)
+			world = world.substring(0, cut);
+		if (world.startsWith("sp_") || world.startsWith("mp_"))
+			world = world.substring(3);
+		String what = viewDimension == -1 ? "nether" : (viewDimension == 1 ? "end" : "overworld");
+		if (viewingPlayerDimension() && viewLayer != SURFACE)
+			what += "_caves_y" + CaveLayers.bottomOf(viewLayer);
+		String stamp = new java.text.SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new java.util.Date());
+		String name = ("map_" + world + "_" + what + "_" + stamp).replaceAll("[^A-Za-z0-9_.-]", "_");
+		MapExport.start(storage(), new File("screenshots", name + ".png"));
 	}
 
 	// ------------------------------------------------------------------- state
@@ -545,6 +574,16 @@ public class GuiFullscreenMap extends GuiScreen {
 					drawLayerPanelText(fr);
 				drawBottomBar(fr, storage, player, mx, my, mapBottom, complete);
 
+				// Export progress / result, under the compass N.
+				String exportStatus = MapExport.status();
+				if (exportStatus != null) {
+					String shown = MapUi.fit(fr, exportStatus, this.width - 40);
+					int w = fr.getStringWidth(shown);
+					int x0 = (this.width - w) / 2 - 6, y0 = mapTop + 18;
+					MapUi.panel(x0, y0, x0 + w + 12, y0 + 16);
+					fr.drawStringWithShadow(shown, x0 + 6, y0 + 4, 0xFFFFFF);
+				}
+
 				if (!menuOpen) {
 					if (hovered != null) {
 						drawLabel(fr, hovered.name, hovered.x, hovered.y, hovered.z, hovered.color);
@@ -836,6 +875,8 @@ public class GuiFullscreenMap extends GuiScreen {
 		}
 		if (viewingPlayerDimension())
 			addMenuItem("Center on player", ACTION_CENTER);
+		if (!MapExport.isRunning())
+			addMenuItem("Export map as picture", ACTION_EXPORT);
 
 		menuW = 0;
 		for (String label : menuLabels)
@@ -906,6 +947,9 @@ public class GuiFullscreenMap extends GuiScreen {
 				}
 				break;
 			}
+			case ACTION_EXPORT:
+				exportMap();
+				break;
 			case ACTION_CENTER:
 				follow = true;
 				zoomAnchored = false;
