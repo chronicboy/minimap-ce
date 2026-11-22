@@ -30,12 +30,12 @@ public class WaypointBeamRenderer {
 	private static final double BEAM_FADE_DISTANCE = 12.0;
 	/** Inner beam radius and outer glow half-width in blocks, as the game's beacon. */
 	private static final double BEAM_RADIUS = 0.2, BEAM_GLOW = 0.3;
-	/** Far beams are widened to stay at least this wide relative to their distance (about 5 pixels at 1080p). */
-	private static final double BEAM_MIN_SCREEN_WIDTH = 0.0065;
+	/** Far beams are widened to stay at least this wide relative to their distance (2 to 3 pixels at 1080p). */
+	private static final double BEAM_MIN_SCREEN_WIDTH = 0.0032;
 	private static final ResourceLocation BEAM_TEXTURE = new ResourceLocation("textures/entity/beacon_beam.png");
 	private static final int SPAWN_COLOR = 0x5599FF;
 	/** Half the diagonal of the diamond marker, GUI pixels. */
-	private static final double DIAMOND_RADIUS = 4.5;
+	private static final double DIAMOND_RADIUS = 2.0;
 	/** Labels show within about 15 degrees of where you look (as before). */
 	private static final double FOCUS_COS = 0.966;
 	/** Closer than this the label is hidden: you are there. */
@@ -290,14 +290,14 @@ public class WaypointBeamRenderer {
 				GL11.glDisable(GL11.GL_TEXTURE_2D);
 				t.startDrawing(GL11.GL_TRIANGLES);
 				if (text != null)
-					MapMarkers.rect(t, x - (textW - 1) / 2.0 - 3, y - 20, x + (textW - 1) / 2.0 + 3, y - 8, 0.06f, 0.06f,
+					MapMarkers.rect(t, x - (textW - 1) / 2.0 - 3, y - 17, x + (textW - 1) / 2.0 + 3, y - 5, 0.06f, 0.06f,
 							0.07f, 0.62f);
 				diamondMarker(t, x, y, l.color, u);
 				t.draw();
 
 				if (text != null) {
 					GL11.glEnable(GL11.GL_TEXTURE_2D);
-					drawAt(fr, text, x - (textW - 1) / 2.0, y - 18, readable(l.color), true);
+					drawAt(fr, text, x - (textW - 1) / 2.0, y - 15, readable(l.color), true);
 				}
 			}
 			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -307,15 +307,16 @@ public class WaypointBeamRenderer {
 	}
 
 	/**
-	 * The waypoint's diamond: its colour, lighter at the top and darker at the bottom, with a thin dark
-	 * outline. Edges are softened over one physical pixel, so the diagonals are smooth, not stepped.
+	 * The waypoint's diamond, small like JourneyMap's: a flat fill in its colour inside a light rim, with
+	 * a faint dark edge outside so it shows on sky, snow and sand alike. Edges are softened over one
+	 * physical pixel, so the diagonals are smooth, not stepped.
 	 */
 	private static void diamondMarker(Tessellator t, double x, double y, int rgb, double pixel) {
 		float r = (rgb >> 16 & 255) / 255.0f, g = (rgb >> 8 & 255) / 255.0f, b = (rgb & 255) / 255.0f;
-		diamond(t, x, y, DIAMOND_RADIUS + 1.6, pixel, 0.02f, 0.02f, 0.03f, 0.02f, 0.02f, 0.03f, 0.9f);
-		float lift = 0.35f, sink = 0.72f;
-		diamond(t, x, y, DIAMOND_RADIUS, pixel, r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift, r * sink,
-				g * sink, b * sink, 1.0f);
+		double rim = Math.max(pixel, 0.6) * Math.sqrt(2.0); // the rim, a pixel or so across its edge
+		diamond(t, x, y, DIAMOND_RADIUS + rim + pixel * 1.4, pixel, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f);
+		diamond(t, x, y, DIAMOND_RADIUS + rim, pixel, 0.96f, 0.96f, 0.97f, 0.86f, 0.86f, 0.88f, 0.95f);
+		diamond(t, x, y, DIAMOND_RADIUS, pixel, r, g, b, r * 0.85f, g * 0.85f, b * 0.85f, 1.0f);
 	}
 
 	/**
@@ -380,8 +381,8 @@ public class WaypointBeamRenderer {
 	}
 
 	static void addLabel(String name, int wx, int wy, int wz, int color, int guiScale, int displayHeight) {
-		// Just above the block the waypoint was set on (waypoints store the feet position).
-		double rx = wx + 0.5 - camX, ry = wy + 1.0 - camY, rz = wz + 0.5 - camZ;
+		// On the ground where the waypoint was set (waypoints store the feet position), at the foot of the beam.
+		double rx = wx + 0.5 - camX, ry = wy + 0.2 - camY, rz = wz + 0.5 - camZ;
 		double distance = Math.sqrt(rx * rx + ry * ry + rz * rz);
 		if (distance < LABEL_MIN_DISTANCE)
 			return;

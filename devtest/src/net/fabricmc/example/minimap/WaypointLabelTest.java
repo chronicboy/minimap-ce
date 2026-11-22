@@ -53,7 +53,7 @@ public class WaypointLabelTest {
         for (String f : new String[] { "camX", "camY", "camZ" }) {
             Field cf = WaypointBeamRenderer.class.getDeclaredField(f);
             cf.setAccessible(true);
-            cf.setDouble(null, f.equals("camY") ? 1.0 : 0.5); // so waypoint (0, 0, z) is at the eye's height
+            cf.setDouble(null, f.equals("camY") ? 0.2 : 0.5); // so waypoint (0, 0, z) is at the eye's height (marker at y + 0.2)
         }
         double cx = W / 2.0 / GUI, cy = H / 2.0 / GUI;
 
