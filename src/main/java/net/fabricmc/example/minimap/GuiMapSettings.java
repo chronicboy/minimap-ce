@@ -306,7 +306,7 @@ public class GuiMapSettings extends GuiScreen {
 			case BTN_PADDING:
 				return onOff(cfg.useMinimapPadding);
 			case BTN_CAVE:
-				return cfg.caveMode ? "§aAuto" : "§cOff";
+				return cfg.caveMode ? "\u00a7aAuto" : "\u00a7cOff";
 			case BTN_ENTITIES:
 				return onOff(cfg.showEntities);
 			case BTN_ENTITY_ICONS: {
@@ -470,7 +470,7 @@ public class GuiMapSettings extends GuiScreen {
 		}
 
 		MapUi.panel(panelX, panelY, panelX + PANEL_W, panelY + panelH);
-		String title = "§lMap Settings";
+		String title = "\u00a7lMap Settings";
 		this.fontRenderer.drawStringWithShadow(title, panelX + (PANEL_W - this.fontRenderer.getStringWidth(title)) / 2,
 				panelY - 12, 0xFFFFFF);
 		MapUi.rect(panelX + PAD, panelY + PAD + TAB_H + 3, panelX + PANEL_W - PAD, panelY + PAD + TAB_H + 4,
@@ -527,7 +527,7 @@ public class GuiMapSettings extends GuiScreen {
 	}
 
 	private static String onOff(boolean value) {
-		return value ? "§aON" : "§cOFF";
+		return value ? "\u00a7aON" : "\u00a7cOFF";
 	}
 
 	private static String zoomLabel(int zoomLevel) {

@@ -255,7 +255,7 @@ public class GuiWaypoints extends GuiScreen {
 		scroll = Math.max(0, Math.min(scroll, maxScroll()));
 
 		MapUi.panel(panelX, panelY, panelX + panelW, panelY + panelH);
-		fr.drawStringWithShadow("§lWaypoints", panelX + 10, panelY + 10, 0xFFFFFF);
+		fr.drawStringWithShadow("\u00a7lWaypoints", panelX + 10, panelY + 10, 0xFFFFFF);
 		MapUi.rect(panelX + 6, panelY + HEADER_H - 2, panelX + panelW - 6, panelY + HEADER_H - 1, MapUi.BORDER);
 
 		int rowLeft = panelX + 6, rowRight = panelX + panelW - 6;

@@ -10,6 +10,7 @@
 #   gl       region store + drawing on an offscreen OpenGL surface, compared pixel by pixel
 #   visual   renders the real minimap code to a PNG you can look at
 #   heads    cuts every mob face out of the game's skins with the radar's table
+#   icons    draws the model-based horse icons from the game's textures (GPU)
 #   screens  renders every Minimap CE screen with the game's real font (needs run/config/mcpatcher.conf,
 #            which the first runClient creates)
 set -e
@@ -44,7 +45,8 @@ CP="$(win "$PWD/build/classes/java/main");$(win "$PWD/$MC");$(win "$LWJGL");$(wi
 for f in "$LANG3" "$CIO" "$TYPESAFE" "$AW"; do [ -f "$f" ] && CP="$CP;$(win "$f")"; done
 javac -nowarn -cp "$CP" -d "$OUT/classes" devtest/src/PureTest.java devtest/src/SamplerTest.java devtest/src/GLTest.java \
 	devtest/src/RealMapView.java devtest/src/net/fabricmc/example/minimap/VisualTest.java \
-	devtest/src/net/fabricmc/example/minimap/HeadSheet.java devtest/src/net/fabricmc/example/minimap/VisualTestTerrain.java 	devtest/src/net/fabricmc/example/minimap/GuiShots.java 2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
+	devtest/src/net/fabricmc/example/minimap/HeadSheet.java devtest/src/net/fabricmc/example/minimap/VisualTestTerrain.java devtest/src/net/fabricmc/example/minimap/GuiShots.java \
+	devtest/src/net/fabricmc/example/minimap/ModelIconTest.java 2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
 CP="$CP;$(win "$PWD/$OUT/classes")"
 LIB="-Djava.library.path=$(win "$PWD/$OUT/natives")"
 
@@ -54,6 +56,7 @@ echo "== sampler"; java -cp "$CP" SamplerTest || status=1
 echo "== gl";      java "$LIB" -cp "$CP" GLTest "$(win "$PWD/$RUN/gl")" || status=1
 echo "== visual";  java "$LIB" -cp "$CP" net.fabricmc.example.minimap.VisualTest "$(win "$PWD/$RUN/visual")" || status=1
 echo "== heads";   java -cp "$CP" net.fabricmc.example.minimap.HeadSheet "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/heads.png")" || status=1
+echo "== icons";   java "$LIB" -cp "$CP" net.fabricmc.example.minimap.ModelIconTest "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/model-icons.png")" || status=1
 if [ -f run/config/mcpatcher.conf ]; then
 	echo "== screens"
 	mkdir -p "$RUN/screens/game/config"

@@ -316,7 +316,7 @@ public class GuiWaypointEdit extends GuiScreen {
 		int left = panelX + 12;
 
 		MapUi.panel(panelX, panelY, panelX + PANEL_W, panelY + PANEL_H);
-		fr.drawStringWithShadow(isNew ? "§lNew Waypoint" : "§lEdit Waypoint", left, panelY + 10, 0xFFFFFF);
+		fr.drawStringWithShadow(isNew ? "\u00a7lNew Waypoint" : "\u00a7lEdit Waypoint", left, panelY + 10, 0xFFFFFF);
 		int d = dimension();
 		String dim = d == -1 ? "Nether" : (d == 1 ? "End" : "Overworld");
 		fr.drawStringWithShadow(dim, panelX + PANEL_W - 12 - fr.getStringWidth(dim), panelY + 10, MapUi.TEXT_MUTED);

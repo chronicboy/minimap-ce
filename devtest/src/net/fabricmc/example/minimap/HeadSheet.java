@@ -71,7 +71,7 @@ public class HeadSheet {
                     if (!n.startsWith("assets/") || !n.endsWith(".png") || !n.contains("/textures/" + key)) continue;
                     if (n.contains("_eyes") || n.contains("collar") || n.contains("_fur") || n.contains("saddle") || n.contains("armor") || n.contains("markings")) continue;
                     BufferedImage skin = ImageIO.read(zip.getInputStream(e));
-                    if (skin == null || head == null) continue;
+                    if (skin == null || head == null || head.model != null) continue; // model icons: ModelIconTest
                     // Same maths as EntityIcons.drawHead: table units -> real texels through the image's own shape.
                     double unitsHigh = head.unitsWide * skin.getHeight() / (double) skin.getWidth();
                     double sx = skin.getWidth() / head.unitsWide, sy = skin.getHeight() / unitsHigh;

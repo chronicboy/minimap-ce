@@ -13,13 +13,15 @@ A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explor
 * **Square minimap** - the shape setting now actually works.
 * **Five minimap zoom levels** - 4x, 2x, 1x, 1/2x and 1/4x (was three).
 * **Minimap opacity** - 100% down to 25%.
-* **Xaero-style entity radar** - mobs are small color-coded dots, and holding the player list key (Tab) shows each mob's face instead. Faces are cut from the mob's own skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline; horses, donkeys and mules get a side profile, and dire wolves, zombie villagers and humanoid mobs from other mods are covered too. Mobs far above or below you are drawn darker. Always-faces, the 3.x arrows and plain dots are available as alternative styles.
+* **Xaero-style entity radar** - mobs are small color-coded dots, and holding the player list key (Tab) shows each mob's face instead. Faces are cut from the mob's own skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline; horses, donkeys and mules are drawn from their 3D model (a face looking at you, ears up), and dire wolves, zombie villagers and humanoid mobs from other mods are covered too. Mobs far above or below you are drawn darker. Always-faces, the 3.x arrows and plain dots are available as alternative styles.
 * **Lettered waypoint tiles** - waypoints are colored tiles with their initial on both maps. The small 3.x squares are still available.
 * **New look for every screen** - one consistent dark theme with flat buttons, cards and a blue accent.
   * Settings: three tabs, sliders for size, zoom and opacity, the minimap drawn live behind (the card moves aside when there is room), and an explanation of whatever option you hover.
   * Waypoint list: distance to every waypoint, click a row to edit, Hide/Show All, a scrollbar, and delete asks for a second click.
   * Waypoint editor: 16 colors, a live tile preview, a Here button (converted for the Nether when editing the other dimension), invalid coordinates are outlined in red instead of silently ignored, and Delete.
   * Fullscreen map: toolbar with dimension tabs, a distance ruler, hover cards with distance, and a restyled right-click menu. Teleport there also works for the other dimension where possible.
+* **Gliding minimap** - while you move, terrain and mob faces move smoothly below the pixel instead of jumping a whole pixel at a time; standing still, they settle exactly onto the pixel grid.
+* **You stay on top** - the player arrow and waypoints are always drawn above mob faces, and mobs at your own level are drawn above those far above or below.
 * **Gloom countdown** - the clock shows the days until the next gloom (new moon) night in brackets, and (Gloom) on the day itself.
 * **Coordinates as plain numbers** - x, y, z without labels, on the minimap and the fullscreen map.
 * **Refined minimap frame** - lit metal band, crisp outline, inner shadow and Xaero-style compass letters just inside the edge; a minimal white player arrow, and every arrow now has smooth (anti-aliased) edges; unexplored ground is faintly hatched instead of looking empty.

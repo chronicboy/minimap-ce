@@ -702,13 +702,13 @@ public class GuiFullscreenMap extends GuiScreen {
 			int wx = (int) Math.floor(toWorldX(mx));
 			int wz = (int) Math.floor(toWorldZ(my));
 			int h = storage != null ? storage.dataAt(wx, wz) >>> 24 : 0;
-			left = "§7Cursor  §f" + wx + ", " + (h > 0 ? String.valueOf(h) : "~") + ", " + wz;
+			left = "\u00a77Cursor  \u00a7f" + wx + ", " + (h > 0 ? String.valueOf(h) : "~") + ", " + wz;
 		} else {
 			left = "Right-click the map for options";
 		}
 		fr.drawStringWithShadow(left, 6, textY, 0xCCCCCC);
 
-		String right = "§7Player  §f" + (int) Math.floor(player.posX) + ", "
+		String right = "\u00a77Player  \u00a7f" + (int) Math.floor(player.posX) + ", "
 				+ (int) Math.floor(player.boundingBox.minY) + ", " + (int) Math.floor(player.posZ);
 		int rightX = this.width - fr.getStringWidth(right) - 6;
 		fr.drawStringWithShadow(right, rightX, textY, 0xCCCCCC);

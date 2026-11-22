@@ -38,7 +38,7 @@ public final class SharpShader {
 	/** -1 not tried yet, 0 unavailable, otherwise the program id. */
 	private static int program = -1;
 	private static int sizeLocation = -1;
-	private static float lastSize = -1;
+	private static float lastW = -1, lastH = -1;
 
 	private SharpShader() {
 	}
@@ -102,27 +102,33 @@ public final class SharpShader {
 	}
 
 	/** Switches the shader on; returns the program that was active, for {@link #end}. */
-	static int begin() {
+	public static int begin() {
 		int previous = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
 		GL20.glUseProgram(program);
-		lastSize = -1;
+		lastW = lastH = -1;
 		return previous;
 	}
 
 	/** Size in texels of the (square) texture about to be drawn. */
-	static void setTextureSize(float size) {
-		if (size != lastSize) {
-			GL20.glUniform2f(sizeLocation, size, size);
-			lastSize = size;
+	public static void setTextureSize(float size) {
+		setTextureSize(size, size);
+	}
+
+	/** Size in texels of the texture about to be drawn. The texture must use linear filtering. */
+	public static void setTextureSize(float width, float height) {
+		if (width != lastW || height != lastH) {
+			GL20.glUniform2f(sizeLocation, width, height);
+			lastW = width;
+			lastH = height;
 		}
 	}
 
 	static void use(boolean on, int previous) {
 		GL20.glUseProgram(on ? program : previous);
-		lastSize = -1;
+		lastW = lastH = -1;
 	}
 
-	static void end(int previous) {
+	public static void end(int previous) {
 		GL20.glUseProgram(previous);
 	}
 }

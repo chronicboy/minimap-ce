@@ -38,7 +38,7 @@ final class Teleport {
 			} catch (Throwable ignored) {
 			}
 			if (!template.contains("{dim}")) {
-				mc.thePlayer.addChatMessage("§c[Minimap] Cannot teleport to another dimension here. Set a "
+				mc.thePlayer.addChatMessage("\u00a7c[Minimap] Cannot teleport to another dimension here. Set a "
 						+ "teleportCommand that uses {dim} in config/minimap-ce.conf.");
 				return;
 			}

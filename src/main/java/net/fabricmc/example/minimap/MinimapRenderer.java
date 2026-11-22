@@ -3,6 +3,7 @@ package net.fabricmc.example.minimap;
 import net.fabricmc.example.minimap.engine.BlockColors;
 import net.fabricmc.example.minimap.engine.MapDraw;
 import net.fabricmc.example.minimap.engine.MapEngine;
+import net.fabricmc.example.minimap.engine.SharpShader;
 import net.minecraft.src.BiomeGenBase;
 import net.minecraft.src.Entity;
 import net.minecraft.src.EntityAnimal;
@@ -48,8 +49,8 @@ public class MinimapRenderer {
 
 	// Marker parts that need a texture, queued while the flat shapes are batched.
 	private static final int MAX_LETTERS = 96;
-	private final int[] letterX = new int[MAX_LETTERS];
-	private final int[] letterY = new int[MAX_LETTERS];
+	private final double[] letterX = new double[MAX_LETTERS];
+	private final double[] letterY = new double[MAX_LETTERS];
 	private final int[] letterColor = new int[MAX_LETTERS];
 	private final String[] letterText = new String[MAX_LETTERS];
 	private int letterCount;
@@ -58,7 +59,18 @@ public class MinimapRenderer {
 	private final double[] headX = new double[MAX_ENTITIES];
 	private final double[] headY = new double[MAX_ENTITIES];
 	private final float[] headShade = new float[MAX_ENTITIES];
+	/** Height difference to the player: faces far above or below are drawn first, so mobs at your level are on top. */
+	private final double[] headDepth = new double[MAX_ENTITIES];
+	private final int[] headOrder = new int[MAX_ENTITIES];
 	private int headCount;
+	/** Faces this frame are drawn with the sharp shader at exact (sub-pixel) positions. */
+	private boolean smoothIcons;
+
+	// Movement detection for smooth scrolling.
+	private double lastRawX = Double.NaN, lastRawZ = Double.NaN;
+	private int stillFrames;
+	/** Frames without movement before the map settles onto the pixel grid. */
+	private static final int SETTLE_FRAMES = 3;
 	private int iconGeneration = -1;
 
 	// HUD text cache
@@ -139,21 +151,36 @@ public class MinimapRenderer {
 		viewCos = Math.cos(viewRotation);
 		viewSin = Math.sin(viewRotation);
 		pixelScale = Math.max(1, guiScale);
-		if (viewRotation == 0.0) {
+		MapDraw.sharpScaling = cfg.sharpScaling;
+		boolean shader = cfg.sharpScaling && SharpShader.available();
+
+		// While you move, the map glides below the pixel (the sharp shader keeps every block solid and
+		// only blends the one pixel on its edge), so terrain and markers move smoothly instead of in
+		// whole-pixel jumps. Standing still, it settles exactly onto the pixel grid, the sharpest it can be.
+		// Zoomed out (a pixel covers several blocks) it always stays on the grid: gliding would only blur.
+		boolean moved = Math.abs(viewX - lastRawX) > 1.0e-4 || Math.abs(viewZ - lastRawZ) > 1.0e-4;
+		lastRawX = viewX;
+		lastRawZ = viewZ;
+		stillFrames = moved ? 0 : Math.min(stillFrames + 1, SETTLE_FRAMES);
+		boolean glide = shader && stillFrames < SETTLE_FRAMES && viewScale * pixelScale >= 0.999;
+		boolean aligned = viewRotation == 0.0 && !glide;
+		if (aligned) {
 			// Land block edges exactly on screen pixels; markers use the same snapped view so nothing drifts.
 			viewX = MapDraw.snap(viewX, centerX, viewScale, pixelScale);
 			viewZ = MapDraw.snap(viewZ, centerY, viewScale, pixelScale);
 		}
-		MapDraw.sharpScaling = cfg.sharpScaling;
+		smoothIcons = shader;
 		buildShape();
 
 		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT
 				| GL11.GL_LIGHTING_BIT);
+		MapDraw.pixelAligned = aligned;
 		try {
 			drawMinimap(mc, world, player, mapX, mapY, mapSize, screenWidth, screenHeight, guiScale, partialTicks,
 					yaw);
 		} finally {
 			// Always restore the GL state, even if something above failed.
+			MapDraw.pixelAligned = true;
 			GL11.glPopAttrib();
 		}
 	}
@@ -212,9 +239,17 @@ public class MinimapRenderer {
 			iconGeneration = BlockColors.generation();
 			EntityIcons.clearCache();
 		}
+		// ---- Markers, bottom to top: mob dots and arrows, mob faces, then waypoints and the player,
+		// so a crowd of mobs never hides where you are or where you are going.
 		t.startDrawing(GL11.GL_TRIANGLES);
 		if (cfg.showEntities)
 			addEntityMarkers(t, world, player, partialTicks, radarStyle(mc));
+		t.draw();
+		if (headCount > 0)
+			drawHeads(mc, t);
+
+		GL11.glDisable(GL11.GL_TEXTURE_2D);
+		t.startDrawing(GL11.GL_TRIANGLES);
 		if (cfg.showSpawnWaypoint && SpawnTracker.instance.hasSpawn())
 			addSpawnMarker(t, world);
 		if (cfg.showWaypoints)
@@ -222,21 +257,14 @@ public class MinimapRenderer {
 		MapMarkers.playerArrow(t, centerX, centerY, Math.toRadians(yaw + 90.0) + viewRotation, 5.5);
 		t.draw();
 
-		// ---- Textured parts of the markers: mob faces, then waypoint letters
+		// ---- Waypoint letters and the text around the map
 		GL11.glEnable(GL11.GL_TEXTURE_2D);
 		GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-		for (int i = 0; i < headCount; i++) {
-			float shade = headShade[i];
-			GL11.glColor4f(shade, shade, shade, 1.0f);
-			EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i]);
-			headTexture[i] = null;
-			headIcon[i] = null;
-		}
 		FontRenderer fr = mc.fontRenderer;
 		if (fr != null) {
 			for (int i = 0; i < letterCount; i++) {
 				String letter = letterText[i];
-				fr.drawString(letter, MapMarkers.tileLetterX(letterX[i], fr.getStringWidth(letter)), letterY[i] - 3,
+				drawAt(fr, letter, MapMarkers.tileLetterLeft(letterX[i], fr.getStringWidth(letter)), letterY[i] - 3,
 						letterColor[i]);
 				letterText[i] = null;
 			}
@@ -466,7 +494,9 @@ public class MinimapRenderer {
 			dx *= f;
 			dy *= f;
 		}
-		int x = (int) Math.round(centerX + dx), y = (int) Math.round(centerY + dy);
+		// On the physical pixel grid: crisp tiles that still move in the smallest steps the screen has.
+		double x = Math.rint((centerX + dx) * pixelScale) / pixelScale;
+		double y = Math.rint((centerY + dy) * pixelScale) / pixelScale;
 		if (!tiles) {
 			MapMarkers.waypoint(t, x, y, 2, rgb);
 			return;
@@ -540,25 +570,56 @@ public class MinimapRenderer {
 				EntityIcons.Head head = EntityIcons.forEntity(e);
 				ResourceLocation texture = head != null ? EntityIcons.textureOf(e) : null;
 				if (texture != null) {
-					// Corner snapped to a physical pixel so every face texel is a crisp square,
-					// framed by a one-pixel dark outline.
+					// With the sharp shader the face sits exactly where the mob is and glides; without it the
+					// corner is snapped to a physical pixel so every texel stays a crisp square.
 					double w = EntityIcons.iconWidth(head), h = EntityIcons.iconHeight(head);
-					double onePixel = 1.0 / pixelScale;
-					double left = Math.rint((x - w / 2.0) * pixelScale) / pixelScale;
-					double top = Math.rint((y - h / 2.0) * pixelScale) / pixelScale;
-					MapMarkers.rect(t, left - onePixel, top - onePixel, left + w + onePixel, top + h + onePixel, 0.02f,
-							0.02f, 0.02f, 1.0f);
+					double left = x - w / 2.0, top = y - h / 2.0;
+					if (!smoothIcons) {
+						left = Math.rint(left * pixelScale) / pixelScale;
+						top = Math.rint(top * pixelScale) / pixelScale;
+					}
 					headTexture[headCount] = texture;
 					headIcon[headCount] = head;
 					headX[headCount] = left;
 					headY[headCount] = top;
 					headShade[headCount] = heightShade(e.posY - player.posY);
+					headDepth[headCount] = Math.abs(e.posY - player.posY);
 					headCount++;
 					continue;
 				}
 			}
 			float shade = heightShade(e.posY - player.posY);
 			MapMarkers.dot(t, x, y, 1.8, r * shade, g * shade, b * shade);
+		}
+	}
+
+	/** Faces, farthest from your level first, each with its own outline so overlapping faces stay apart. */
+	private void drawHeads(Minecraft mc, Tessellator t) {
+		for (int i = 0; i < headCount; i++)
+			headOrder[i] = i;
+		for (int i = 1; i < headCount; i++) {
+			int k = headOrder[i], j = i - 1;
+			while (j >= 0 && headDepth[headOrder[j]] < headDepth[k]) {
+				headOrder[j + 1] = headOrder[j];
+				j--;
+			}
+			headOrder[j + 1] = k;
+		}
+		GL11.glEnable(GL11.GL_TEXTURE_2D);
+		int previousProgram = smoothIcons ? SharpShader.begin() : 0;
+		try {
+			for (int n = 0; n < headCount; n++) {
+				int i = headOrder[n];
+				EntityIcons.drawHead(mc, t, headTexture[i], headIcon[i], headX[i], headY[i], headShade[i],
+						1.0 / pixelScale, smoothIcons);
+			}
+		} finally {
+			if (smoothIcons)
+				SharpShader.end(previousProgram);
+			for (int i = 0; i < headCount; i++) {
+				headTexture[i] = null;
+				headIcon[i] = null;
+			}
 		}
 	}
 
@@ -677,9 +738,9 @@ public class MinimapRenderer {
 			if (world.provider.dimensionId == 0) {
 				int until = daysToGloom(dayIndex);
 				if (until == 0)
-					sb.append(" §c(Gloom)§f");
+					sb.append(" \u00a7c(Gloom)\u00a7f");
 				else
-					sb.append(" §7(").append(until).append(")§f");
+					sb.append(" \u00a77(").append(until).append(")\u00a7f");
 			}
 			sb.append(", ");
 			long minutes = second / 60, seconds = second % 60;

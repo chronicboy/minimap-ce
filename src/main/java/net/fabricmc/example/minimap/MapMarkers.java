@@ -190,6 +190,11 @@ final class MapMarkers {
 	 * @param x,y centre of the tile (snapped to whole pixels)
 	 */
 	static void waypointTile(Tessellator t, int x, int y, int rgb) {
+		waypointTile(t, (double) x, (double) y, rgb);
+	}
+
+	/** {@link #waypointTile(Tessellator, int, int, int)} at any position (the minimap uses physical pixels). */
+	static void waypointTile(Tessellator t, double x, double y, int rgb) {
 		float r = ((rgb >> 16) & 0xFF) / 255.0f;
 		float g = ((rgb >> 8) & 0xFF) / 255.0f;
 		float b = (rgb & 0xFF) / 255.0f;
@@ -225,6 +230,12 @@ final class MapMarkers {
 	/** Left edge for drawing a letter of the given font width centred on a tile at x. */
 	static int tileLetterX(int x, int charWidth) {
 		// The font's width includes one pixel of spacing after the glyph.
+		int glyph = Math.max(1, charWidth - 1);
+		return x - 4 + (9 - glyph) / 2;
+	}
+
+	/** {@link #tileLetterX} for a tile centred at any position. */
+	static double tileLetterLeft(double x, int charWidth) {
 		int glyph = Math.max(1, charWidth - 1);
 		return x - 4 + (9 - glyph) / 2;
 	}

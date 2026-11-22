@@ -28,6 +28,11 @@ public final class MapDraw {
 	public static boolean sharpScaling = true;
 	/** Zoomed out: true shows one real block per pixel (more contrast), false the average of the blocks it covers. */
 	public static boolean pointSampleZoomedOut = false;
+	/**
+	 * False while the view centre is not on the pixel grid (the minimap gliding as the player moves):
+	 * sampling is then chosen as for a rotated view, so blocks stay solid at sub-pixel offsets.
+	 */
+	public static boolean pixelAligned = true;
 
 	private static final int MODE_NEAREST = 0;
 	private static final int MODE_SHARP = 1;
@@ -152,7 +157,7 @@ public final class MapDraw {
 			return true;
 
 		double realScale = scale * guiScale;
-		boolean rotated = rotation != 0.0;
+		boolean rotated = rotation != 0.0 || !pixelAligned;
 		boolean overview = realScale < 0.5 || regionCount > FULL_RES_REGION_LIMIT;
 		int regionMode = filterMode(realScale, rotated);
 		int lodMode = filterMode(realScale * LOD_BLOCKS_PER_TEXEL, rotated);

@@ -33,6 +33,7 @@ import net.minecraft.src.RenderManager;
 import net.minecraft.src.ResourceLocation;
 import net.minecraft.src.Tessellator;
 import btw.entity.mob.DireWolfEntity;
+import net.fabricmc.example.minimap.engine.SharpShader;
 import org.lwjgl.opengl.GL11;
 
 import java.util.HashMap;
@@ -57,12 +58,24 @@ final class EntityIcons {
 		final int w, h;
 		/** One entry per piece, drawn in order: {texX, texY, width, height, iconX, iconY}. */
 		final int[][] parts;
+		/** Drawn from model boxes instead (null for flat faces). */
+		final ModelIcon model;
 
 		Head(float unitsWide, int w, int h, int[]... parts) {
 			this.unitsWide = unitsWide;
 			this.w = w;
 			this.h = h;
 			this.parts = parts;
+			this.model = null;
+		}
+
+		/** An icon drawn from model boxes. */
+		Head(ModelIcon model) {
+			this.unitsWide = 0;
+			this.w = 0;
+			this.h = 0;
+			this.parts = new int[0][];
+			this.model = model;
 		}
 
 		/** A single face rectangle of a 64-texel-wide skin. */
@@ -99,25 +112,61 @@ final class EntityIcons {
 			{ EntityWitch.class, new Head(8, 8, 8, 10) },
 			{ EntityIronGolem.class, new Head(128.0f, 8, 10, new int[] { 8, 8, 8, 10, 0, 0 }) },
 			{ EntityGhast.class, new Head(16, 16, 16, 16) },
-			// Horses, donkeys and mules have no flat face: a side profile (ear, head with eye, two
-			// muzzle pieces) assembled from the model's parts. In the texture the front is on the right.
-			{ EntityHorse.class, new Head(64.0f, 12, 8,
-					new int[] { 19, 17, 1, 3, 0, 0 },
-					new int[] { 0, 20, 7, 5, 0, 3 },
-					new int[] { 0, 30, 5, 3, 7, 3 },
-					new int[] { 0, 33, 5, 2, 7, 6 }) },
 			{ DireWolfEntity.class, new Head(4, 4, 6, 6) },
 	};
 
+	private static Head horseHead;
+	private static Head donkeyHead;
+
+	/** View of the horse icon: the long face tilted towards the viewer (blaze and muzzle showing), turned a little to show one eye. */
+	static double horseYaw = Math.toRadians(20), horsePitch = 0.0, horseTilt = Math.toRadians(70);
+	/** Model icons are scaled to this many GUI pixels at their widest. */
+	static double modelIconSize = 12.0;
+
+	/**
+	 * Head, muzzle, the top of the mane and the ears of BTW's ModelHorse (64 x 64 texture), tilted
+	 * as the model carries it. Donkeys and mules have the long ears.
+	 */
+	static Head horseHead(boolean donkey) {
+		if (donkey ? donkeyHead == null : horseHead == null) {
+			double[] head = { 0, 13, -3, -11, -2, 6, 5, 7, 0, 0 };
+			double[] mouthTop = { 0, 25, -2, -11, -7, 4, 3, 5, 0, 0 };
+			double[] mouthBottom = { 0, 28, -2, -8, -7, 4, 2, 5, 0, 0 };
+			double[] mane = { 56, 36, -1, -11, 5.01, 2, 5, 2, 0, 0 };
+			// The face is turned towards the viewer, which would point the ears at the viewer too; each ear
+			// is stood back up about its own base, a little apart and splayed like the model's.
+			double earX = -(horseTilt + Math.toRadians(10));
+			double[] leftEar = donkey ? new double[] { 0, 12, 0.15, -17, 5, 2, 7, 1, earX, 0.20, 1.15, -10, 5.5 }
+					: new double[] { 19, 16, 0.6, -13, 5, 2, 3, 1, earX, 0.15, 1.6, -10, 5.5 };
+			double[] rightEar = donkey ? new double[] { 0, 12, -2.15, -17, 5, 2, 7, 1, earX, -0.20, -1.15, -10, 5.5 }
+					: new double[] { 19, 16, -2.6, -13, 5, 2, 3, 1, earX, -0.15, -1.6, -10, 5.5 };
+			Head h = new Head(new ModelIcon(64, 64, horseTilt, horseYaw, horsePitch, mane, leftEar, rightEar, head,
+					mouthTop, mouthBottom));
+			if (donkey)
+				donkeyHead = h;
+			else
+				horseHead = h;
+		}
+		return donkey ? donkeyHead : horseHead;
+	}
+
+	/** For devtest: forget the built model icons so a changed view takes effect. */
+	static void rebuildModelIcons() {
+		horseHead = null;
+		donkeyHead = null;
+	}
+
 	private static final HashMap<Class<?>, Head> byClass = new HashMap<Class<?>, Head>();
-	/** Texture height / width, looked up once per texture. */
-	private static final HashMap<ResourceLocation, Float> aspects = new HashMap<ResourceLocation, Float>();
+	/** Texture size {width, height} in texels, looked up once per texture. */
+	private static final HashMap<ResourceLocation, int[]> sizes = new HashMap<ResourceLocation, int[]>();
 
 	private EntityIcons() {
 	}
 
 	/** Head layout for an entity class, or null if it has none. */
 	static Head forClass(Class<?> type) {
+		if (EntityHorse.class.isAssignableFrom(type))
+			return horseHead(false); // no flat face (the eyes are on the sides of a long head): drawn from the model
 		Head head = byClass.get(type);
 		if (head == null) {
 			head = NONE;
@@ -140,6 +189,10 @@ final class EntityIcons {
 	static Head forEntity(Entity entity) {
 		if (entity instanceof EntityZombie && ((EntityZombie) entity).isVillager())
 			return ZOMBIE_VILLAGER;
+		if (entity instanceof EntityHorse) {
+			int type = ((EntityHorse) entity).getHorseType();
+			return horseHead(type == 1 || type == 2); // donkeys and mules
+		}
 		Class<?> type = entity.getClass();
 		if (!byClass.containsKey(type) && forClass(type) == null) {
 			// Not in the table: a mob drawn as a humanoid has the standard head layout.
@@ -173,37 +226,72 @@ final class EntityIcons {
 
 	/** Forget cached texture shapes (resource pack change). */
 	static void clearCache() {
-		aspects.clear();
+		sizes.clear();
 	}
 
 	/**
-	 * Draws an entity's face with its top-left corner at (left, top), at
-	 * {@link #iconWidth} x {@link #iconHeight}. Expects texturing and blending
-	 * enabled and the colour set to white.
+	 * Draws an entity's face with its top-left corner at (left, top), at {@link #iconWidth} x
+	 * {@link #iconHeight}, framed by a dark outline one physical pixel wide. Expects texturing and
+	 * blending enabled. The position may be fractional: with the sharp shader every texel stays a
+	 * solid square and only its edges blend, so icons glide across the map instead of jumping
+	 * from pixel to pixel.
 	 *
 	 * @param texture the skin from {@link #textureOf}
+	 * @param shade   brightness (1 = normal)
+	 * @param pixel   one physical pixel in GUI units
+	 * @param sharp   true when the sharp shader is active (the texture is then filtered linearly)
 	 */
-	static void drawHead(Minecraft mc, Tessellator t, ResourceLocation texture, Head head, double left, double top) {
+	static void drawHead(Minecraft mc, Tessellator t, ResourceLocation texture, Head head, double left, double top,
+			float shade, double pixel, boolean sharp) {
 		mc.renderEngine.bindTexture(texture);
-
-		Float aspect = aspects.get(texture);
-		if (aspect == null) {
+		int[] size = sizes.get(texture);
+		if (size == null) {
 			int w = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH);
 			int h = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT);
-			aspect = (w > 0 && h > 0) ? (float) h / (float) w : 0.5f;
-			aspects.put(texture, aspect);
+			size = new int[] { w > 0 ? w : 64, h > 0 ? h : 32 };
+			sizes.put(texture, size);
 		}
-		// The table is in texels of a texture "unitsWide" across; its height follows the real image's shape.
-		double unitsHigh = head.unitsWide * aspect;
-		double u = unit(head);
+		drawBound(t, head, size[0], size[1], left, top, shade, pixel, sharp);
+	}
 
-		t.startDrawingQuads();
-		for (int[] part : head.parts) {
-			double x0 = left + part[4] * u, y0 = top + part[5] * u;
-			addFace(t, x0, y0, x0 + part[2] * u, y0 + part[3] * u, part[0], part[1], part[2], part[3], head.unitsWide,
-					unitsHigh);
+	/** {@link #drawHead} for a texture that is already bound, of the given size in texels. */
+	static void drawBound(Tessellator t, Head head, int texW, int texH, double left, double top, float shade,
+			double pixel, boolean sharp) {
+		int minFilter = 0, magFilter = 0;
+		if (sharp) {
+			minFilter = GL11.glGetTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER);
+			magFilter = GL11.glGetTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER);
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+			SharpShader.setTextureSize(texW, texH);
 		}
-		t.draw();
+		try {
+			if (head.model != null) {
+				head.model.draw(t, left, top, modelScale(head), shade, pixel);
+				return;
+			}
+			// The table is in texels of a texture "unitsWide" across; its height follows the real image's shape.
+			double unitsHigh = head.unitsWide * texH / (double) texW;
+			double u = unit(head);
+			int[] base = head.parts[0];
+			t.startDrawingQuads();
+			// Outline: the base face stretched one pixel further each way and drawn dark.
+			t.setColorRGBA_F(0.02f, 0.02f, 0.03f, 1.0f);
+			addFace(t, left - pixel, top - pixel, left + head.w * u + pixel, top + head.h * u + pixel, base[0], base[1],
+					base[2], base[3], head.unitsWide, unitsHigh);
+			t.setColorRGBA_F(shade, shade, shade, 1.0f);
+			for (int[] part : head.parts) {
+				double x0 = left + part[4] * u, y0 = top + part[5] * u;
+				addFace(t, x0, y0, x0 + part[2] * u, y0 + part[3] * u, part[0], part[1], part[2], part[3],
+						head.unitsWide, unitsHigh);
+			}
+			t.draw();
+		} finally {
+			if (sharp) {
+				GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, minFilter);
+				GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, magFilter);
+			}
+		}
 	}
 
 	/**
@@ -216,12 +304,16 @@ final class EntityIcons {
 		return largest <= 12 ? 1.0 : 8.0 / largest;
 	}
 
+	private static double modelScale(Head head) {
+		return modelIconSize / Math.max(head.model.width, head.model.height);
+	}
+
 	static double iconWidth(Head head) {
-		return head.w * unit(head);
+		return head.model != null ? head.model.width * modelScale(head) : head.w * unit(head);
 	}
 
 	static double iconHeight(Head head) {
-		return head.h * unit(head);
+		return head.model != null ? head.model.height * modelScale(head) : head.h * unit(head);
 	}
 
 	private static void addFace(Tessellator t, double x0, double y0, double x1, double y1, int tx, int ty, int tw,

@@ -15,7 +15,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Adjustable size, corner and opacity.**
 - **Chunk grid overlay** (toggleable).
 - **Crisp at every zoom** — blocks line up with screen pixels; in-between zooms and the rotating map keep blocks solid with clean edges.
-- **Smooth and light** — terrain is drawn from GPU textures, so the map scrolls smoothly at any frame rate and costs next to nothing. Chunks are only read when they load or change.
+- **Smooth and light** — terrain is drawn from GPU textures, so the map scrolls smoothly at any frame rate and costs next to nothing. While you move, the map and the mob faces glide below the pixel instead of jumping a pixel at a time; standing still, everything settles crisply onto the pixel grid. Chunks are only read when they load or change.
 - **Cave mode** — underground, the minimap shows the caves at your level instead of the surface, and switches back when you come out.
 - **Nether support** — shows the floor of the level you are on and remembers what you have seen as you move between levels.
 
@@ -43,7 +43,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 
 ### Entity Radar
 - **Dots, faces on Tab** — like Xaero's: nearby mobs are small color-coded dots (red hostile, green passive animals and villagers, blue players, yellow anything else), and holding the player list key (Tab) shows each one's face.
-- **Mob faces** — cut from the mob's own skin, so they follow resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one; horses, donkeys and mules get a side profile.
+- **Mob faces** — cut from the mob's own skin, so they follow resource packs and BTW's varied animal skins. Every vanilla and BTW mob the radar shows has one. Horses, donkeys and mules, whose eyes are on the sides of a long head, are drawn from their 3D model instead: a face looking at you with its ears up.
 - **Depth at a glance** — mobs well above or below you are drawn darker.
 - **Other styles** — always faces, arrows that point where each mob is looking, or plain dots.
 - Only shows living things within 20 blocks of your height; invisible mobs and sneaking players stay hidden.
