@@ -31,6 +31,10 @@ public class MinimapRenderer {
 	private static final int CIRCLE_SEGMENTS = 72;
 	private static final int MAX_ENTITIES = 128;
 	private static final double ENTITY_Y_RANGE = 20.0;
+	/** Mobs this close to your level (feet to feet) are drawn at full brightness. */
+	private static final double SHADE_FREE_HEIGHT = 8.0;
+	/** Brightness of mobs at the edge of the height range. */
+	private static final double SHADE_MIN = 0.65;
 
 	// Shape outline relative to the map centre (GUI pixels).
 	private final double[] shapeX = new double[CIRCLE_SEGMENTS];
@@ -126,10 +130,18 @@ public class MinimapRenderer {
 		return shownScale;
 	}
 
-	/** Mobs far above or below are drawn darker, so the radar shows depth at a glance. */
+	/**
+	 * Mobs well above or below you are drawn a little darker, so the radar hints at depth. Within
+	 * {@link #SHADE_FREE_HEIGHT} blocks of your level they stay at full brightness; beyond that they
+	 * dim gently, to {@link #SHADE_MIN} at the edge of the radar's height range.
+	 *
+	 * @param dy height of the mob's feet above yours, in blocks
+	 */
 	private static float heightShade(double dy) {
-		double d = Math.abs(dy) - 3.0;
-		return d <= 0 ? 1.0f : (float) Math.max(0.45, 1.0 - d * 0.035);
+		double t = (Math.abs(dy) - SHADE_FREE_HEIGHT) / (ENTITY_Y_RANGE - SHADE_FREE_HEIGHT);
+		if (t <= 0.0)
+			return 1.0f;
+		return (float) (1.0 - (1.0 - SHADE_MIN) * Math.min(1.0, t));
 	}
 
 	public void renderMinimap(Minecraft mc, World world, EntityPlayer player, int screenWidth, int screenHeight,
@@ -562,7 +574,9 @@ public class MinimapRenderer {
 				continue;
 			if (Math.abs(e.posX - viewX) > reach || Math.abs(e.posZ - viewZ) > reach)
 				continue;
-			if (Math.abs(e.posY - player.posY) > ENTITY_Y_RANGE)
+			// Feet to feet: the client player's posY is at eye level, other entities' at their feet.
+			double dyFeet = e.boundingBox.minY - player.boundingBox.minY;
+			if (Math.abs(dyFeet) > ENTITY_Y_RANGE)
 				continue;
 			if (e.isInvisible())
 				continue;
@@ -600,7 +614,7 @@ public class MinimapRenderer {
 
 			if (style == MapConfig.ENTITY_ARROWS) {
 				float eyaw = e.prevRotationYaw + (e.rotationYaw - e.prevRotationYaw) * partialTicks;
-				float shade = heightShade(e.posY - player.posY);
+				float shade = heightShade(dyFeet);
 				MapMarkers.entityArrow(t, x, y, Math.toRadians(eyaw + 90.0) + viewRotation, r * shade, g * shade,
 						b * shade);
 				continue;
@@ -625,13 +639,13 @@ public class MinimapRenderer {
 					headCy[headCount] = y;
 					headW[headCount] = w;
 					headH[headCount] = h;
-					headShade[headCount] = heightShade(e.posY - player.posY);
-					headDepth[headCount] = Math.abs(e.posY - player.posY);
+					headShade[headCount] = heightShade(dyFeet);
+					headDepth[headCount] = Math.abs(dyFeet);
 					headCount++;
 					continue;
 				}
 			}
-			float shade = heightShade(e.posY - player.posY);
+			float shade = heightShade(dyFeet);
 			MapMarkers.dot(t, x, y, 1.8, r * shade, g * shade, b * shade);
 		}
 	}

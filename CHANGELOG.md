@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.0.1
+
+### Bug Fixes
+* Mobs on the radar are no longer drawn much too dark: their height is now measured from your feet instead of your eyes, mobs within 8 blocks of your level are at full brightness, and the dimming for mobs far above or below is gentler.
+
 ## 4.0.0
 
 A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explored terrain lives in textures on the graphics card, and chunks are only looked at when they actually load or change.

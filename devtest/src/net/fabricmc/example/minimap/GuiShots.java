@@ -255,6 +255,7 @@ public class GuiShots {
         e.posX = e.prevPosX = x;
         e.posZ = e.prevPosZ = z;
         e.posY = e.prevPosY = y;
+        set(e, Entity.class, "boundingBox", AxisAlignedBB.getBoundingBox(x - 0.45, y, z - 0.45, x + 0.45, y + 0.9, z + 0.45));
         DataWatcher dw = new DataWatcher();
         dw.addObject(0, Byte.valueOf((byte) 0));
         set(e, Entity.class, "dataWatcher", dw);
