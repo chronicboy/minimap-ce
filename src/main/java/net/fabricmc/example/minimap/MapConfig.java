@@ -7,6 +7,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 
 public class MapConfig {
@@ -225,10 +228,26 @@ public class MapConfig {
 		}
 		props.setProperty("teleportCommand", savedCommand);
 
-		try (FileOutputStream fos = new FileOutputStream(new File(CONFIG_FILE))) {
+		// Written to a temporary file first and moved into place, so a crash mid-save keeps the old settings.
+		File target = new File(CONFIG_FILE);
+		File tmp = new File(CONFIG_FILE + ".tmp");
+		try (FileOutputStream fos = new FileOutputStream(tmp)) {
 			props.store(fos, "Minimap CE Configuration");
 		} catch (IOException e) {
 			System.err.println("[Minimap CE] Failed to save config: " + e.getMessage());
+			tmp.delete();
+			return;
+		}
+		try {
+			try {
+				Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING,
+						StandardCopyOption.ATOMIC_MOVE);
+			} catch (AtomicMoveNotSupportedException e) {
+				Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			}
+		} catch (IOException e) {
+			System.err.println("[Minimap CE] Failed to save config: " + e.getMessage());
+			tmp.delete();
 		}
 	}
 

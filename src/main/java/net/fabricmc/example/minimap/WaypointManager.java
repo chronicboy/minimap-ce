@@ -8,6 +8,9 @@ import net.minecraft.src.World;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -104,16 +107,63 @@ public class WaypointManager {
             return;
         }
 
-        try (FileReader reader = new FileReader(file)) {
+        List<Waypoint> loaded = read(file);
+        if (loaded != null) {
+            waypoints.addAll(loaded);
+            System.out.println("[Minimap CE] Loaded " + waypoints.size() + " waypoints for world: " + currentWorldId);
+        }
+    }
+
+    /**
+     * Reads a waypoint file. An unreadable file is moved aside (".corrupt") and null returned, so the
+     * next save cannot quietly replace the waypoints it still holds.
+     */
+    private List<Waypoint> read(File file) {
+        List<Waypoint> loaded;
+        try (Reader reader = new InputStreamReader(new FileInputStream(file))) {
             Type listType = new TypeToken<List<Waypoint>>() {
             }.getType();
-            List<Waypoint> loaded = gson.fromJson(reader, listType);
-            if (loaded != null) {
-                waypoints.addAll(loaded);
-            }
-            System.out.println("[Minimap CE] Loaded " + waypoints.size() + " waypoints for world: " + currentWorldId);
+            loaded = gson.fromJson(reader, listType);
         } catch (Exception e) {
-            System.err.println("[Minimap CE] Failed to load waypoints: " + e.getMessage());
+            System.err.println("[Minimap CE] Could not read " + file.getName() + ", keeping it as .corrupt: " + e);
+            File aside = new File(file.getPath() + ".corrupt");
+            aside.delete();
+            file.renameTo(aside);
+            return null;
+        }
+        if (loaded == null)
+            return new ArrayList<Waypoint>();
+        loaded.removeIf(w -> w == null);
+        return loaded;
+    }
+
+    /**
+     * Writes the list to a temporary file and then moves it over the old one, so a crash or full disk
+     * mid-save leaves the previous waypoints intact instead of a half-written file.
+     */
+    private boolean write(File file, List<Waypoint> list) {
+        File dir = file.getAbsoluteFile().getParentFile();
+        if (dir != null && !dir.isDirectory())
+            dir.mkdirs();
+        File tmp = new File(file.getPath() + ".tmp");
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(tmp))) {
+            gson.toJson(list, writer);
+        } catch (IOException e) {
+            System.err.println("[Minimap CE] Failed to save waypoints: " + e.getMessage());
+            tmp.delete();
+            return false;
+        }
+        try {
+            try {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } catch (IOException e) {
+            System.err.println("[Minimap CE] Failed to save waypoints: " + e.getMessage());
+            tmp.delete();
+            return false;
         }
     }
 
@@ -129,17 +179,7 @@ public class WaypointManager {
         if (currentWorldId.isEmpty())
             return;
 
-        File dir = new File(WAYPOINT_DIR);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-
-        File file = getWaypointFile();
-        try (FileWriter writer = new FileWriter(file)) {
-            gson.toJson(waypoints, writer);
-        } catch (IOException e) {
-            System.err.println("[Minimap CE] Failed to save waypoints: " + e.getMessage());
-        }
+        write(getWaypointFile(), waypoints);
     }
 
     private File getWaypointFile() {
@@ -179,14 +219,8 @@ public class WaypointManager {
         if (!file.exists())
             return new ArrayList<Waypoint>();
 
-        try (FileReader reader = new FileReader(file)) {
-            Type listType = new TypeToken<List<Waypoint>>() {
-            }.getType();
-            List<Waypoint> loaded = gson.fromJson(reader, listType);
-            return loaded != null ? loaded : new ArrayList<Waypoint>();
-        } catch (Exception e) {
-            return new ArrayList<Waypoint>();
-        }
+        List<Waypoint> loaded = read(file);
+        return loaded != null ? loaded : new ArrayList<Waypoint>();
     }
 
     public boolean hasWorld() {
@@ -198,16 +232,6 @@ public class WaypointManager {
         if (worldId.isEmpty())
             return;
 
-        File dir = new File(WAYPOINT_DIR);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-
-        File file = new File(WAYPOINT_DIR + "/" + worldId + ".json");
-        try (FileWriter writer = new FileWriter(file)) {
-            gson.toJson(list, writer);
-        } catch (IOException e) {
-            System.err.println("[Minimap CE] Failed to save waypoints: " + e.getMessage());
-        }
+        write(new File(WAYPOINT_DIR + "/" + worldId + ".json"), list);
     }
 }

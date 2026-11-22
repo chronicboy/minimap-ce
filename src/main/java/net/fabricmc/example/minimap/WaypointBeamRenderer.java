@@ -101,7 +101,9 @@ public class WaypointBeamRenderer {
 		// waypoint colour, an inner beam that turns and scrolls upwards, and a faint glow around it.
 		double time = mc.theWorld.getTotalWorldTime() % 8388471L + partialTicks;
 		GL11.glPushMatrix();
-		GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+		// Only the state touched below (pushing everything costs more on some drivers).
+		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_CURRENT_BIT
+				| GL11.GL_LIGHTING_BIT | GL11.GL_TEXTURE_BIT | GL11.GL_FOG_BIT);
 		GL11.glEnable(GL11.GL_BLEND);
 		GL11.glDisable(GL11.GL_CULL_FACE);
 		GL11.glDisable(GL11.GL_ALPHA_TEST); // no flickering at the faint edges

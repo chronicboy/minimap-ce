@@ -17,6 +17,11 @@ public class SpawnTracker {
 
     private int spawnX, spawnY, spawnZ;
     private boolean hasSpawn = false;
+    /**
+     * On a server the spawn arrives in its own packet just after joining; if it was read before that
+     * (still 0, 0) it is kept only for now, not saved, and corrected as soon as the real one is known.
+     */
+    private boolean provisional = false;
     private String currentWorldPrefix = "";
 
     /**
@@ -34,6 +39,7 @@ public class SpawnTracker {
 
         currentWorldPrefix = prefix;
         hasSpawn = false;
+        provisional = false;
 
         // Try loading saved spawn
         File file = getSpawnFile();
@@ -41,10 +47,12 @@ public class SpawnTracker {
             try (FileInputStream fis = new FileInputStream(file)) {
                 Properties props = new Properties();
                 props.load(fis);
-                spawnX = Integer.parseInt(props.getProperty("spawnX", "0"));
-                spawnY = Integer.parseInt(props.getProperty("spawnY", "64"));
-                spawnZ = Integer.parseInt(props.getProperty("spawnZ", "0"));
+                spawnX = Integer.parseInt(props.getProperty("spawnX", "0").trim());
+                spawnY = Integer.parseInt(props.getProperty("spawnY", "64").trim());
+                spawnZ = Integer.parseInt(props.getProperty("spawnZ", "0").trim());
                 hasSpawn = true;
+                // A server spawn saved as 0, 0 by an older version may have been read too early: check it again.
+                provisional = mc.getIntegratedServer() == null && spawnX == 0 && spawnZ == 0;
                 System.out.println("[Minimap CE] Loaded saved spawn: " + spawnX + ", " + spawnY + ", " + spawnZ);
                 return;
             } catch (Exception e) {
@@ -97,13 +105,26 @@ public class SpawnTracker {
         }
 
         hasSpawn = true;
+        provisional = mc.getIntegratedServer() == null && spawnX == 0 && spawnZ == 0;
+        if (provisional)
+            return;
         save();
         System.out.println("[Minimap CE] Captured spawn point: " + spawnX + ", " + spawnY + ", " + spawnZ);
+    }
+
+    /** Call every tick: replaces a provisional server spawn once the real one has arrived. */
+    public void tick(Minecraft mc) {
+        if (!provisional || mc.theWorld == null || mc.theWorld.getWorldInfo() == null)
+            return;
+        WorldInfo info = mc.theWorld.getWorldInfo();
+        if (info.getSpawnX() != 0 || info.getSpawnZ() != 0)
+            captureSpawn(mc);
     }
 
     public void onWorldLeave() {
         currentWorldPrefix = "";
         hasSpawn = false;
+        provisional = false;
     }
 
     public int getSpawnX() {
@@ -124,12 +145,12 @@ public class SpawnTracker {
 
     /** Get nether-scaled X. */
     public int getNetherSpawnX() {
-        return spawnX / 8;
+        return Math.floorDiv(spawnX, 8);
     }
 
     /** Get nether-scaled Z. */
     public int getNetherSpawnZ() {
-        return spawnZ / 8;
+        return Math.floorDiv(spawnZ, 8);
     }
 
     private void save() {

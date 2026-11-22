@@ -68,6 +68,8 @@ public class MinecraftMixin {
 				}
 			}
 
+			SpawnTracker.instance.tick(mc);
+
 			if (mc.currentScreen instanceof GuiGameOver && !wasDead) {
 				wasDead = true;
 				addDeathWaypoint(mc);

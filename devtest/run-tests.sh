@@ -13,6 +13,7 @@
 #   icons    draws the model-based horse icons from the game's textures (GPU)
 #   faces    straight-on model icons (snouts, beaks, noses, horns) and clipping to the round minimap (GPU)
 #   labels   where in-world waypoint labels land on the HUD, from a real camera setup (GPU)
+#   wpfile   waypoint files: saved atomically, read back the same, damaged files set aside
 #   export   map export to PNG: region files + unsaved chunks, checked pixel by pixel, and scaled down
 #   screens  renders every Minimap CE screen with the game's real font (needs run/config/mcpatcher.conf,
 #            which the first runClient creates)
@@ -50,7 +51,7 @@ javac -nowarn -cp "$CP" -d "$OUT/classes" devtest/src/PureTest.java devtest/src/
 	devtest/src/RealMapView.java devtest/src/net/fabricmc/example/minimap/VisualTest.java \
 	devtest/src/net/fabricmc/example/minimap/HeadSheet.java devtest/src/net/fabricmc/example/minimap/VisualTestTerrain.java devtest/src/net/fabricmc/example/minimap/GuiShots.java \
 	devtest/src/net/fabricmc/example/minimap/ModelIconTest.java devtest/src/net/fabricmc/example/minimap/FrontIconTest.java \
-	devtest/src/net/fabricmc/example/minimap/WaypointLabelTest.java devtest/src/net/fabricmc/example/minimap/engine/ExportTest.java \
+	devtest/src/net/fabricmc/example/minimap/WaypointLabelTest.java devtest/src/net/fabricmc/example/minimap/WaypointFileTest.java devtest/src/net/fabricmc/example/minimap/engine/ExportTest.java \
 	2>&1 | grep -v "sun.misc.Unsafe\|^Note:\|\^\|warning" || true
 CP="$CP;$(win "$PWD/$OUT/classes")"
 LIB="-Djava.library.path=$(win "$PWD/$OUT/natives")"
@@ -64,6 +65,7 @@ echo "== heads";   java -cp "$CP" net.fabricmc.example.minimap.HeadSheet "$(win 
 echo "== icons";   java "$LIB" -cp "$CP" net.fabricmc.example.minimap.ModelIconTest "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/model-icons.png")" || status=1
 echo "== faces";   java "$LIB" -cp "$CP" net.fabricmc.example.minimap.FrontIconTest "$(win "$PWD/$MC")" "$(win "$PWD/$RUN/visual/front-icons.png")" || status=1
 echo "== labels";  java "$LIB" -cp "$CP" net.fabricmc.example.minimap.WaypointLabelTest || status=1
+echo "== wpfile";  java -cp "$CP" net.fabricmc.example.minimap.WaypointFileTest "$(win "$PWD/$RUN/pure")" || status=1
 echo "== export";  java -cp "$CP" net.fabricmc.example.minimap.engine.ExportTest "$(win "$PWD/$RUN/visual")" || status=1
 if [ -f run/config/mcpatcher.conf ]; then
 	echo "== screens"

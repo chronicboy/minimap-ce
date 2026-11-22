@@ -44,6 +44,10 @@ A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explor
 * **Resource packs** - map colours update when the resource pack changes.
 
 ### Bug Fixes
+* Fixed waypoints that could all be lost if the game crashed while saving them: waypoint files (and the settings file) are now written safely, and a damaged waypoint file is kept as `.corrupt` instead of being replaced by an empty list.
+* Fixed the spawn point on servers being saved as 0, 0 when it was read before the server sent it; it now corrects itself, including spawns saved that way by older versions.
+* Fixed the Nether spawn marker being one block off at negative coordinates.
+* An error while drawing waypoint beams can no longer crash the game.
 * Fixed the map freezing the game for a moment every 30 seconds while exploring: region files are now compressed and written on a background thread.
 * Fixed map data being written straight over the old file, which could corrupt a region if the game closed mid-save. Saves are now atomic, and an unreadable file is set aside as `.corrupt` instead of being overwritten.
 * Fixed the whole explored map of a world being loaded into memory on joining. Regions now load on demand and unload when not needed.
