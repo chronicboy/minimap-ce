@@ -30,9 +30,9 @@ public class MapConfig {
 	public static final int WAYPOINT_LETTERS = 0;
 	public static final int WAYPOINT_SQUARES = 1;
 
-	/** In the world: icon and distance, the name when you look towards it. */
+	/** In the world: beam and diamond, "Name (distance)" while you look towards it. */
 	public static final int WORLD_LABELS_ICONS = 0;
-	/** In the world: icon, name and distance at all times. */
+	/** In the world: beam, diamond and "Name (distance)" at all times. */
 	public static final int WORLD_LABELS_FULL = 1;
 	/** In the world: only the beams. */
 	public static final int WORLD_LABELS_OFF = 2;

@@ -4,6 +4,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.src.FontRenderer;
 import net.minecraft.src.Minecraft;
 import net.minecraft.src.RenderManager;
+import net.minecraft.src.ResourceLocation;
 import net.minecraft.src.Tessellator;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -16,15 +17,27 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Waypoints in the world: a faint beam in the 3D scene, and on the HUD a crisp waypoint tile at
- * the waypoint's place with the distance under it, plus the name while you look towards it.
+ * Waypoints in the world, JourneyMap style: a beacon beam in the waypoint's colour, and at the
+ * waypoint a diamond with "Name (distance)" above it while you look towards it.
  *
- * The labels are 2D: the camera of the world frame is remembered while the beams are drawn, and
- * the HUD projects each waypoint with it. That keeps them pixel-sharp and the same size at any
- * distance, and the right size at every GUI scale.
+ * The diamond and label are 2D: the camera of the world frame is remembered while the beams are
+ * drawn, and the HUD projects each waypoint with it. That keeps them sharp and the same size at
+ * any distance, and the right size at every GUI scale.
  */
 public class WaypointBeamRenderer {
-	private static final float BEAM_MIN_DISTANCE = 10.0f;
+	/** Closer than this (horizontally) there is no beam; it fades in over the next few blocks. */
+	private static final double BEAM_MIN_DISTANCE = 4.0;
+	private static final double BEAM_FADE_DISTANCE = 12.0;
+	/** Inner beam radius and outer glow half-width in blocks, as the game's beacon. */
+	private static final double BEAM_RADIUS = 0.2, BEAM_GLOW = 0.3;
+	/** Far beams are widened to stay at least this wide relative to their distance (about 5 pixels at 1080p). */
+	private static final double BEAM_MIN_SCREEN_WIDTH = 0.0065;
+	private static final ResourceLocation BEAM_TEXTURE = new ResourceLocation("textures/entity/beacon_beam.png");
+	private static final int SPAWN_COLOR = 0x5599FF;
+	/** Half the diagonal of the diamond marker, GUI pixels. */
+	private static final double DIAMOND_RADIUS = 4.5;
+	/** Labels show within about 15 degrees of where you look (as before). */
+	private static final double FOCUS_COS = 0.966;
 	/** Closer than this the label is hidden: you are there. */
 	private static final double LABEL_MIN_DISTANCE = 3.0;
 
@@ -82,31 +95,46 @@ public class WaypointBeamRenderer {
 		} catch (Exception e) {
 		}
 
+		// Beacon-style beams, as JourneyMap draws them: the game's beacon beam texture tinted with the
+		// waypoint colour, an inner beam that turns and scrolls upwards, and a faint glow around it.
+		double time = mc.theWorld.getTotalWorldTime() % 8388471L + partialTicks;
 		GL11.glPushMatrix();
 		GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
 		GL11.glEnable(GL11.GL_BLEND);
-		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 		GL11.glDisable(GL11.GL_CULL_FACE);
 		GL11.glDisable(GL11.GL_ALPHA_TEST); // no flickering at the faint edges
-		GL11.glDisable(GL11.GL_TEXTURE_2D);
 		GL11.glDisable(GL11.GL_LIGHTING);
 		GL11.glDisable(GL11.GL_FOG);
 		GL11.glEnable(GL11.GL_DEPTH_TEST);
 		GL11.glDepthMask(false);
-
-		if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
-			int[] s = spawnPosition(mc);
-			renderBeam(s[0], s[1], s[2], 0x5599FF, maxRender);
+		GL11.glShadeModel(GL11.GL_SMOOTH);
+		boolean textured = false;
+		try {
+			mc.renderEngine.bindTexture(BEAM_TEXTURE);
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
+			textured = true;
+		} catch (Throwable ignored) {
 		}
-		List<Waypoint> waypoints = WaypointManager.instance.getWaypoints();
-		for (int i = 0, n = waypoints.size(); i < n; i++) {
-			Waypoint wp = waypoints.get(i);
-			if (wp.enabled)
-				renderBeam(wp.x, wp.y, wp.z, wp.color, maxRender);
+		if (textured)
+			GL11.glEnable(GL11.GL_TEXTURE_2D);
+		else
+			GL11.glDisable(GL11.GL_TEXTURE_2D);
+		try {
+			if (MapConfig.instance.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
+				int[] s = spawnPosition(mc);
+				renderBeam(s[0], s[1], s[2], SPAWN_COLOR, maxRender, time);
+			}
+			List<Waypoint> waypoints = WaypointManager.instance.getWaypoints();
+			for (int i = 0, n = waypoints.size(); i < n; i++) {
+				Waypoint wp = waypoints.get(i);
+				if (wp.enabled)
+					renderBeam(wp.x, wp.y, wp.z, wp.color, maxRender, time);
+			}
+		} finally {
+			GL11.glPopAttrib();
+			GL11.glPopMatrix();
 		}
-
-		GL11.glPopAttrib();
-		GL11.glPopMatrix();
 	}
 
 	private static int[] spawnPosition(Minecraft mc) {
@@ -136,55 +164,74 @@ public class WaypointBeamRenderer {
 		cameraValid = viewport[2] > 0 && viewport[3] > 0;
 	}
 
-	private static void renderBeam(int wx, int wy, int wz, int color, double maxRender) {
+	/**
+	 * One beam, from the waypoint up to the top of the world. Beyond the render distance it is drawn
+	 * at the edge of the view in the same direction; far away it gets wider, so it stays a few pixels
+	 * wide on screen instead of thinning to a hairline. It fades out as you walk up to the waypoint.
+	 */
+	private static void renderBeam(int wx, int wy, int wz, int color, double maxRender, double time) {
 		double dx = wx + 0.5 - camX;
-		double dy = wy + 0.5 - camY;
+		double dy = wy - camY;
 		double dz = wz + 0.5 - camZ;
 		double distH = Math.sqrt(dx * dx + dz * dz);
 		if (distH < BEAM_MIN_DISTANCE)
 			return;
+		float fade = (float) Math.min(1.0, (distH - BEAM_MIN_DISTANCE) / BEAM_FADE_DISTANCE);
+		double shown = distH;
 		if (distH > maxRender) {
 			double ratio = maxRender / distH;
 			dx *= ratio;
 			dy *= ratio;
 			dz *= ratio;
+			shown = maxRender;
 		}
+		double widen = Math.max(1.0, shown * BEAM_MIN_SCREEN_WIDTH / (2.0 * BEAM_RADIUS));
+		double inner = BEAM_RADIUS * widen, outer = BEAM_GLOW * widen;
+		double height = Math.max(64.0, 256.0 - wy);
 		float r = (color >> 16 & 255) / 255.0F;
 		float g = (color >> 8 & 255) / 255.0F;
 		float b = (color & 255) / 255.0F;
 
-		GL11.glPushMatrix();
-		GL11.glTranslated(dx, dy, dz);
-		// A hollow, very translucent shell, and an even fainter glow around it.
-		GL11.glColor4f(r, g, b, 0.18f);
-		drawBeamQuads(0.25f, 0, 256);
-		GL11.glColor4f(r, g, b, 0.04f);
-		drawBeamQuads(0.35f, 0, 256);
-		GL11.glPopMatrix();
-	}
+		// Texture scrolls upwards over time; the inner beam turns slowly (as the game's beacon).
+		double scroll = -time * 0.2 - Math.floor(-time * 0.1);
+		double turn = time * 0.025;
+		Tessellator t = Tessellator.instance;
 
-	private static void drawBeamQuads(float half, float yMin, float yMax) {
-		GL11.glBegin(GL11.GL_QUADS);
-		GL11.glVertex3f(-half, yMin, -half);
-		GL11.glVertex3f(half, yMin, -half);
-		GL11.glVertex3f(half, yMax, -half);
-		GL11.glVertex3f(-half, yMax, -half);
+		// Inner beam: four turning sides, added on top of the scene so it glows.
+		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
+		t.startDrawingQuads();
+		t.setColorRGBA_F(r, g, b, 0.55f * fade);
+		double v0 = scroll - 1.0, v1 = v0 + height * (0.5 / BEAM_RADIUS) / widen;
+		double[] cx = new double[4], cz = new double[4];
+		for (int i = 0; i < 4; i++) {
+			double a = turn + Math.PI * (0.25 + 0.5 * i);
+			cx[i] = dx + Math.cos(a) * inner;
+			cz[i] = dz + Math.sin(a) * inner;
+		}
+		for (int i = 0; i < 4; i++) {
+			int j = (i + 1) % 4;
+			t.addVertexWithUV(cx[i], dy + height, cz[i], 1.0, v1);
+			t.addVertexWithUV(cx[i], dy, cz[i], 1.0, v0);
+			t.addVertexWithUV(cx[j], dy, cz[j], 0.0, v0);
+			t.addVertexWithUV(cx[j], dy + height, cz[j], 0.0, v1);
+		}
+		t.draw();
 
-		GL11.glVertex3f(half, yMin, half);
-		GL11.glVertex3f(-half, yMin, half);
-		GL11.glVertex3f(-half, yMax, half);
-		GL11.glVertex3f(half, yMax, half);
-
-		GL11.glVertex3f(-half, yMin, half);
-		GL11.glVertex3f(-half, yMin, -half);
-		GL11.glVertex3f(-half, yMax, -half);
-		GL11.glVertex3f(-half, yMax, half);
-
-		GL11.glVertex3f(half, yMin, -half);
-		GL11.glVertex3f(half, yMin, half);
-		GL11.glVertex3f(half, yMax, half);
-		GL11.glVertex3f(half, yMax, -half);
-		GL11.glEnd();
+		// Outer glow: a faint square column.
+		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+		t.startDrawingQuads();
+		t.setColorRGBA_F(r, g, b, 0.2f * fade);
+		double w0 = scroll - 1.0, w1 = w0 + height / widen;
+		double[] ox = { dx - outer, dx + outer, dx + outer, dx - outer };
+		double[] oz = { dz - outer, dz - outer, dz + outer, dz + outer };
+		for (int i = 0; i < 4; i++) {
+			int j = (i + 1) % 4;
+			t.addVertexWithUV(ox[i], dy + height, oz[i], 1.0, w1);
+			t.addVertexWithUV(ox[i], dy, oz[i], 1.0, w0);
+			t.addVertexWithUV(ox[j], dy, oz[j], 0.0, w0);
+			t.addVertexWithUV(ox[j], dy + height, oz[j], 0.0, w1);
+		}
+		t.draw();
 	}
 
 	// ------------------------------------------------------------------ HUD labels
@@ -207,7 +254,7 @@ public class WaypointBeamRenderer {
 		labels.clear();
 		if (cfg.showSpawnWaypoint && SpawnTracker.instance.hasSpawn()) {
 			int[] s = spawnPosition(mc);
-			addLabel("Spawn", s[0], s[1], s[2], 0x0066CC, guiScale, mc.displayHeight);
+			addLabel("Spawn", s[0], s[1], s[2], SPAWN_COLOR, guiScale, mc.displayHeight);
 		}
 		List<Waypoint> waypoints = WaypointManager.instance.getWaypoints();
 		for (int i = 0, n = waypoints.size(); i < n; i++) {
@@ -219,20 +266,7 @@ public class WaypointBeamRenderer {
 			return;
 		Collections.sort(labels, FAR_FIRST);
 
-		// The name shows for the waypoint nearest the crosshair, if it is close enough to it.
-		Label focused = null;
-		double midX = guiWidth / 2.0, midY = guiHeight / 2.0;
-		double best = Math.max(24.0, guiHeight * 0.07);
-		best *= best;
-		for (Label l : labels) {
-			double d = (l.x - midX) * (l.x - midX) + (l.y - midY) * (l.y - midY);
-			if (d < best) {
-				best = d;
-				focused = l;
-			}
-		}
-		boolean allNames = cfg.worldWaypointLabels == MapConfig.WORLD_LABELS_FULL;
-		boolean letters = cfg.waypointIconStyle == MapConfig.WAYPOINT_LETTERS;
+		boolean always = cfg.worldWaypointLabels == MapConfig.WORLD_LABELS_FULL;
 
 		GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LIGHTING_BIT);
 		try {
@@ -248,40 +282,101 @@ public class WaypointBeamRenderer {
 			for (Label l : labels) {
 				// Farther labels first, so nearer ones are drawn over them. Snapped to physical pixels.
 				double x = Math.rint(l.x * guiScale) / guiScale, y = Math.rint(l.y * guiScale) / guiScale;
-				boolean named = allNames || l == focused;
-				String dist = formatDistance(l.distance);
-				String name = named ? (l.name == null ? "" : l.name) : null;
+				// The name and distance show while you look towards the waypoint (within about 15 degrees).
+				String text = always || l.focus > FOCUS_COS
+						? (l.name == null ? "" : l.name) + " (" + formatDistance(l.distance) + ")" : null;
+				int textW = text != null ? fr.getStringWidth(text) : 0;
 
 				GL11.glDisable(GL11.GL_TEXTURE_2D);
 				t.startDrawing(GL11.GL_TRIANGLES);
-				int distW = fr.getStringWidth(dist);
-				MapMarkers.rect(t, x - (distW + 1) / 2.0 - 1, y + 7, x + (distW + 1) / 2.0 + 1, y + 7 + 10, 0.05f, 0.05f,
-						0.06f, 0.55f);
-				if (name != null && !name.isEmpty()) {
-					int nameW = fr.getStringWidth(name);
-					MapMarkers.rect(t, x - (nameW + 1) / 2.0 - 2, y - 19, x + (nameW + 1) / 2.0 + 2, y - 8, 0.05f, 0.05f,
-							0.06f, 0.70f);
-				}
-				if (letters)
-					MapMarkers.waypointTile(t, x, y, l.color);
-				else
-					MapMarkers.waypoint(t, x + 0.5, y + 0.5, 3, l.color);
+				if (text != null)
+					MapMarkers.rect(t, x - (textW - 1) / 2.0 - 3, y - 20, x + (textW - 1) / 2.0 + 3, y - 8, 0.06f, 0.06f,
+							0.07f, 0.62f);
+				diamondMarker(t, x, y, l.color, u);
 				t.draw();
 
-				GL11.glEnable(GL11.GL_TEXTURE_2D);
-				if (letters) {
-					String letter = MapMarkers.tileLetter(l.name);
-					drawAt(fr, letter, MapMarkers.tileLetterLeft(x, fr.getStringWidth(letter)), y - 3,
-							MapMarkers.tileLetterColor(l.color), false);
+				if (text != null) {
+					GL11.glEnable(GL11.GL_TEXTURE_2D);
+					drawAt(fr, text, x - (textW - 1) / 2.0, y - 18, readable(l.color), true);
 				}
-				drawAt(fr, dist, x - (distW - 1) / 2.0, y + 8 + u, 0xE6E6E6, true);
-				if (name != null && !name.isEmpty())
-					drawAt(fr, name, x - (fr.getStringWidth(name) - 1) / 2.0, y - 17, 0xFFFFFF, true);
 			}
 			GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 		} finally {
 			GL11.glPopAttrib();
 		}
+	}
+
+	/**
+	 * The waypoint's diamond: its colour, lighter at the top and darker at the bottom, with a thin dark
+	 * outline. Edges are softened over one physical pixel, so the diagonals are smooth, not stepped.
+	 */
+	private static void diamondMarker(Tessellator t, double x, double y, int rgb, double pixel) {
+		float r = (rgb >> 16 & 255) / 255.0f, g = (rgb >> 8 & 255) / 255.0f, b = (rgb & 255) / 255.0f;
+		diamond(t, x, y, DIAMOND_RADIUS + 1.6, pixel, 0.02f, 0.02f, 0.03f, 0.02f, 0.02f, 0.03f, 0.9f);
+		float lift = 0.35f, sink = 0.72f;
+		diamond(t, x, y, DIAMOND_RADIUS, pixel, r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift, r * sink,
+				g * sink, b * sink, 1.0f);
+	}
+
+	/**
+	 * A diamond (half diagonal {@code radius}) as triangles, the top vertex in the first colour and the
+	 * bottom in the second, its edge fading out over {@code feather} (measured across the edge).
+	 */
+	private static void diamond(Tessellator t, double x, double y, double radius, double feather, float r0, float g0,
+			float b0, float r1, float g1, float b1, float a) {
+		double grow = feather * Math.sqrt(2.0) / 2.0;
+		double in = radius - grow, out = radius + grow;
+		double[] dx = { 0, 1, 0, -1 }, dy = { -1, 0, 1, 0 };
+		float rm = (r0 + r1) / 2, gm = (g0 + g1) / 2, bm = (b0 + b1) / 2;
+		for (int i = 0; i < 4; i++) {
+			int j = (i + 1) % 4;
+			// Fill: centre and two corners.
+			t.setColorRGBA_F(rm, gm, bm, a);
+			t.addVertex(x, y, 0.0);
+			cornerColor(t, i, r0, g0, b0, r1, g1, b1, rm, gm, bm, a);
+			t.addVertex(x + dx[i] * in, y + dy[i] * in, 0.0);
+			cornerColor(t, j, r0, g0, b0, r1, g1, b1, rm, gm, bm, a);
+			t.addVertex(x + dx[j] * in, y + dy[j] * in, 0.0);
+			// Soft edge: from the inner corners (opaque) to the outer ones (clear).
+			double ix = x + dx[i] * in, iy = y + dy[i] * in, jx = x + dx[j] * in, jy = y + dy[j] * in;
+			double oix = x + dx[i] * out, oiy = y + dy[i] * out, ojx = x + dx[j] * out, ojy = y + dy[j] * out;
+			cornerColor(t, i, r0, g0, b0, r1, g1, b1, rm, gm, bm, a);
+			t.addVertex(ix, iy, 0.0);
+			cornerColor(t, i, r0, g0, b0, r1, g1, b1, rm, gm, bm, 0.0f);
+			t.addVertex(oix, oiy, 0.0);
+			cornerColor(t, j, r0, g0, b0, r1, g1, b1, rm, gm, bm, 0.0f);
+			t.addVertex(ojx, ojy, 0.0);
+			cornerColor(t, i, r0, g0, b0, r1, g1, b1, rm, gm, bm, a);
+			t.addVertex(ix, iy, 0.0);
+			cornerColor(t, j, r0, g0, b0, r1, g1, b1, rm, gm, bm, 0.0f);
+			t.addVertex(ojx, ojy, 0.0);
+			cornerColor(t, j, r0, g0, b0, r1, g1, b1, rm, gm, bm, a);
+			t.addVertex(jx, jy, 0.0);
+		}
+	}
+
+	/** Corner 0 is the top (first colour), 2 the bottom (second colour), the sides in between. */
+	private static void cornerColor(Tessellator t, int corner, float r0, float g0, float b0, float r1, float g1,
+			float b1, float rm, float gm, float bm, float a) {
+		if (corner == 0)
+			t.setColorRGBA_F(r0, g0, b0, a);
+		else if (corner == 2)
+			t.setColorRGBA_F(r1, g1, b1, a);
+		else
+			t.setColorRGBA_F(rm, gm, bm, a);
+	}
+
+	/** The waypoint colour for its label, lifted towards white when too dark to read on the dark backing. */
+	static int readable(int rgb) {
+		int r = rgb >> 16 & 255, g = rgb >> 8 & 255, b = rgb & 255;
+		int luminance = (r * 299 + g * 587 + b * 114) / 1000;
+		if (luminance >= 120)
+			return rgb & 0xFFFFFF;
+		int k = 120 - luminance; // 0..120: how much white to mix in, out of 200
+		r += (255 - r) * k / 200;
+		g += (255 - g) * k / 200;
+		b += (255 - b) * k / 200;
+		return r << 16 | g << 8 | b;
 	}
 
 	static void addLabel(String name, int wx, int wy, int wz, int color, int guiScale, int displayHeight) {
@@ -309,6 +404,9 @@ public class WaypointBeamRenderer {
 		l.name = name;
 		l.color = color;
 		l.distance = distance;
+		// Cosine of the angle between the view direction (-z in eye space) and the waypoint.
+		double eyeLen = Math.sqrt(ex * ex + ey * ey + ez * ez);
+		l.focus = eyeLen > 1.0e-9 ? -ez / eyeLen : 1.0;
 		l.x = px / guiScale;
 		l.y = (displayHeight - pyUp) / guiScale;
 		labels.add(l);

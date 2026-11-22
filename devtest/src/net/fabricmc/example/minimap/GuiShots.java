@@ -271,6 +271,15 @@ public class GuiShots {
             GL11.glViewport(0, 0, W, H);
             GL11.glClearColor(0.42f, 0.58f, 0.80f, 1f);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+            // A dusk sky and dark ground behind everything, like the world at night.
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, sr.getScaledWidth_double(), sr.getScaledHeight_double(), 0.0D, 1000.0D, 3000.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glLoadIdentity();
+            GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+            Gui.drawRect(0, 0, gw, gh, 0xFF141826);
+            Gui.drawRect(0, gh * 3 / 5, gw, gh, 0xFF2C3A26);
             // The camera of the world pass: the player's eyes, looking along their yaw, a little up.
             GL11.glMatrixMode(GL11.GL_PROJECTION);
             GL11.glLoadIdentity();
@@ -280,10 +289,12 @@ public class GuiShots {
             GL11.glLoadIdentity();
             GL11.glRotatef(-12f, 1, 0, 0);
             GL11.glRotatef(player.rotationYaw + 180f, 0, 1, 0);
-            set(null, WaypointBeamRenderer.class, "camX", player.posX);
-            set(null, WaypointBeamRenderer.class, "camY", player.posY + 1.62);
-            set(null, WaypointBeamRenderer.class, "camZ", player.posZ);
-            WaypointBeamRenderer.captureCamera();
+            // The real world pass: beams drawn, camera remembered.
+            RenderManager.renderPosX = player.posX;
+            RenderManager.renderPosY = player.posY + 1.62;
+            RenderManager.renderPosZ = player.posZ;
+            GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
+            WaypointBeamRenderer.renderAll(1.0f);
 
             GL11.glMatrixMode(GL11.GL_PROJECTION);
             GL11.glLoadIdentity();
@@ -291,7 +302,6 @@ public class GuiShots {
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glLoadIdentity();
             GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
-            Gui.drawRect(0, gh * 3 / 5, gw, gh, 0xFF4F7A33);
             GL11.glEnable(GL11.GL_ALPHA_TEST);
             GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
             GL11.glShadeModel(GL11.GL_FLAT);

@@ -38,7 +38,7 @@ Minimap CE provides all the classic minimap functionality you need, themed to fe
 - **Cross-dimension waypoint list** — manage waypoints for any dimension from the waypoint screen.
 - **Death waypoints** — saved automatically and numbered (Death, Death 2, ...).
 - **Spawn point** — tracked per world, with its own toggle.
-- **In the world** — a translucent beam, and a crisp waypoint tile with the distance under it that stays the same size however far away it is (like Xaero's). Look towards one and its name appears. Settings > Markers & Info > In World switches to names on every label, or beams only.
+- **In the world** — JourneyMap style: a beacon beam in the waypoint's colour (it stays visible far away and fades out as you arrive), and a diamond at the waypoint with its name and distance above it while you look towards it. Settings > Markers & Info > In World shows the labels all the time, or beams only.
 - **Teleport** to a waypoint or any explored spot on the map. This sends a chat command, so it needs cheats or operator rights; the command can be changed (see Configuration).
 - **Per-world saving** — separate lists for every singleplayer world and multiplayer server.
 
@@ -89,7 +89,7 @@ On the full-screen map:
 Press `O` in game. The minimap stays visible behind the screen and updates as you change things; hover an option for an explanation.
 
 - **Minimap** — on/off, corner, shape, rotation, size, zoom, opacity, padding, cave mode.
-- **Markers & Info** — entity radar and its icon style (Dots + Tab Faces, Faces, Arrows or Dots), waypoints and their icon style, chunk grid, compass, clock, coordinates, biome, and how waypoints are labelled in the world (Icons, Full or Beams Only).
+- **Markers & Info** — entity radar and its icon style (Dots + Tab Faces, Faces, Arrows or Dots), waypoints and their icon style, chunk grid, compass, clock, coordinates, biome, and how waypoints are labelled in the world (On Look, Always or Beams Only).
 - **World Map** — whether the full-screen map pauses the game, whether teleport options are shown, and map pixel scaling (Sharp, or Nearest if your graphics driver has trouble with Sharp).
 
 ## Configuration

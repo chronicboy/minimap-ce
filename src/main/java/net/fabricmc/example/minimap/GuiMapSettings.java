@@ -211,8 +211,8 @@ public class GuiMapSettings extends GuiScreen {
 			add(BTN_COORDINATES, right, y, "Your block position (x, z, y) under the minimap.");
 			y += rowStep;
 			add(BTN_BIOME, left, y, "Name of the biome you are standing in, with (Caves) while the cave view is on.");
-			add(BTN_WORLD_LABELS, right, y, "Waypoints in the world: Icons shows each one's tile and distance, and "
-					+ "its name while you look towards it. Full always shows the name. Beams Only hides the labels.");
+			add(BTN_WORLD_LABELS, right, y, "Waypoints in the world: a beam and a diamond, with the name and distance "
+					+ "while you look towards it (On Look) or all the time (Always). Beams Only hides diamonds and labels.");
 		} else {
 			add(BTN_PAUSE_GAME, left, y,
 					"Whether the fullscreen map pauses a singleplayer game. Turn off to watch it while travelling.");
@@ -339,7 +339,7 @@ public class GuiMapSettings extends GuiScreen {
 			case BTN_SHARP:
 				return cfg.sharpScaling ? "Sharp" : "Nearest";
 			case BTN_WORLD_LABELS: {
-				String[] styles = { "Icons", "Full", "Beams Only" };
+				String[] styles = { "On Look", "Always", "Beams Only" };
 				return styles[Math.max(0, Math.min(2, cfg.worldWaypointLabels))];
 			}
 			default:
