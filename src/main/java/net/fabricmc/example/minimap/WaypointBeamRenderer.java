@@ -34,6 +34,8 @@ public class WaypointBeamRenderer {
 	private static final double BEAM_MIN_SCREEN_WIDTH = 0.0032;
 	private static final ResourceLocation BEAM_TEXTURE = new ResourceLocation("textures/entity/beacon_beam.png");
 	private static final int SPAWN_COLOR = 0x5599FF;
+	/** Corner scratch for the beam sides (render thread only). */
+	private static final double[] BEAM_X = new double[4], BEAM_Z = new double[4];
 	/** Half the diagonal of the diamond marker, GUI pixels. */
 	private static final double DIAMOND_RADIUS = 2.0;
 	/** Labels show within about 15 degrees of where you look (as before). */
@@ -202,7 +204,7 @@ public class WaypointBeamRenderer {
 		t.startDrawingQuads();
 		t.setColorRGBA_F(r, g, b, 0.55f * fade);
 		double v0 = scroll - 1.0, v1 = v0 + height * (0.5 / BEAM_RADIUS) / widen;
-		double[] cx = new double[4], cz = new double[4];
+		double[] cx = BEAM_X, cz = BEAM_Z;
 		for (int i = 0; i < 4; i++) {
 			double a = turn + Math.PI * (0.25 + 0.5 * i);
 			cx[i] = dx + Math.cos(a) * inner;
@@ -222,8 +224,11 @@ public class WaypointBeamRenderer {
 		t.startDrawingQuads();
 		t.setColorRGBA_F(r, g, b, 0.2f * fade);
 		double w0 = scroll - 1.0, w1 = w0 + height / widen;
-		double[] ox = { dx - outer, dx + outer, dx + outer, dx - outer };
-		double[] oz = { dz - outer, dz - outer, dz + outer, dz + outer };
+		double[] ox = BEAM_X, oz = BEAM_Z;
+		ox[0] = ox[3] = dx - outer;
+		ox[1] = ox[2] = dx + outer;
+		oz[0] = oz[1] = dz - outer;
+		oz[2] = oz[3] = dz + outer;
 		for (int i = 0; i < 4; i++) {
 			int j = (i + 1) % 4;
 			t.addVertexWithUV(ox[i], dy + height, oz[i], 1.0, w1);
@@ -307,16 +312,18 @@ public class WaypointBeamRenderer {
 	}
 
 	/**
-	 * The waypoint's diamond, small like JourneyMap's: a flat fill in its colour inside a light rim, with
-	 * a faint dark edge outside so it shows on sky, snow and sand alike. Edges are softened over one
+	 * The waypoint's diamond, small like JourneyMap's: all in its own colour, the fill a little
+	 * lighter at the top, edged in a darker shade of the same colour. Edges are softened over one
 	 * physical pixel, so the diagonals are smooth, not stepped.
 	 */
 	private static void diamondMarker(Tessellator t, double x, double y, int rgb, double pixel) {
 		float r = (rgb >> 16 & 255) / 255.0f, g = (rgb >> 8 & 255) / 255.0f, b = (rgb & 255) / 255.0f;
-		double rim = Math.max(pixel, 0.6) * Math.sqrt(2.0); // the rim, a pixel or so across its edge
-		diamond(t, x, y, DIAMOND_RADIUS + rim + pixel * 1.4, pixel, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f);
-		diamond(t, x, y, DIAMOND_RADIUS + rim, pixel, 0.96f, 0.96f, 0.97f, 0.86f, 0.86f, 0.88f, 0.95f);
-		diamond(t, x, y, DIAMOND_RADIUS, pixel, r, g, b, r * 0.85f, g * 0.85f, b * 0.85f, 1.0f);
+		double edge = Math.max(pixel, 0.6) * Math.sqrt(2.0); // the edge, a pixel or so across
+		float dark = 0.42f, lift = 0.18f;
+		diamond(t, x, y, DIAMOND_RADIUS + edge, pixel, r * dark, g * dark, b * dark, r * dark, g * dark, b * dark,
+				0.95f);
+		diamond(t, x, y, DIAMOND_RADIUS, pixel, r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift, r * 0.9f,
+				g * 0.9f, b * 0.9f, 1.0f);
 	}
 
 	/**
