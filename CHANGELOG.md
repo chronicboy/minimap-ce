@@ -1,10 +1,5 @@
 # Changelog
 
-## 4.0.1
-
-### Bug Fixes
-* Mobs on the radar are no longer drawn much too dark: their height is now measured from your feet instead of your eyes, mobs within 8 blocks of your level are at full brightness, and the dimming for mobs far above or below is gentler.
-
 ## 4.0.0
 
 A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explored terrain lives in textures on the graphics card, and chunks are only looked at when they actually load or change.
@@ -18,7 +13,7 @@ A new map engine. The map is no longer redrawn pixel by pixel on the CPU; explor
 * **Square minimap** - the shape setting now actually works.
 * **Five minimap zoom levels** - 4x, 2x, 1x, 1/2x and 1/4x (was three).
 * **Minimap opacity** - 100% down to 25%.
-* **Xaero-style entity radar** - mobs are small color-coded dots, and holding the player list key (Tab) shows each mob's face instead. Faces are cut from the mob's own skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline; horses, donkeys and mules are drawn from their 3D model (a face looking at you, ears up), and dire wolves, zombie villagers and humanoid mobs from other mods are covered too. Mobs far above or below you are drawn darker. Always-faces, the 3.x arrows and plain dots are available as alternative styles.
+* **Xaero-style entity radar** - mobs are small color-coded dots, and holding the player list key (Tab) shows each mob's face instead. Faces are cut from the mob's own skin (follows resource packs and BTW's varied animal skins), pixel-aligned with a thin dark outline; horses, donkeys and mules are drawn from their 3D model (a face looking at you, ears up), and dire wolves, zombie villagers and humanoid mobs from other mods are covered too. Mobs well above or below you are drawn slightly darker (within 8 blocks of your level they are at full brightness). Always-faces, the 3.x arrows and plain dots are available as alternative styles.
 * **Lettered waypoint tiles** - waypoints are colored tiles with their initial on both maps. The small 3.x squares are still available.
 * **New look for every screen** - one consistent dark theme with flat buttons, cards and a blue accent.
   * Settings: three tabs, sliders for size, zoom and opacity, the minimap drawn live behind (the card moves aside when there is room), and an explanation of whatever option you hover.
